@@ -69,3 +69,9 @@ CSV and XLSX uploads remain temporary workspace data. Only retrieved evidence
 uses the existing embedding/answer provider boundaries. The parser does not
 load external workbook links, macros, or formulas; no client content is used as
 a committed fixture.
+# Reconciliation data handling
+
+Reconciliation is computed only in the temporary server-side workspace. No
+client-side session storage, external links, network calls, formula evaluation,
+raw filesystem paths, or new persistence are introduced. Generated evidence
+contains display values and citation-safe document/row provenance only.

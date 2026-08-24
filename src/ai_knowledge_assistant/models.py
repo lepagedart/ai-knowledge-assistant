@@ -1,6 +1,7 @@
 """Typed data contracts for the document-ingestion boundary."""
 
 from dataclasses import dataclass
+from decimal import Decimal
 from enum import StrEnum
 
 
@@ -86,6 +87,100 @@ class StructuredRecordType(StrEnum):
     VENDOR = "vendor"
     PRODUCT_CATALOG = "product_catalog"
     GENERIC_TABULAR = "generic_tabular"
+
+
+class ReconciliationStatus(StrEnum):
+    """Deterministic state assigned to one invoice/PO comparison."""
+
+    MATCHED = "MATCHED"
+    VARIANCE = "VARIANCE"
+    MISSING_ON_INVOICE = "MISSING_ON_INVOICE"
+    MISSING_ON_PO = "MISSING_ON_PO"
+    UNMATCHED = "UNMATCHED"
+
+
+class ReconciliationIssueCode(StrEnum):
+    """Stable, machine-readable reconciliation outcomes and safe failures."""
+
+    MISSING_PO_NUMBER = "MISSING_PO_NUMBER"
+    PO_NOT_FOUND = "PO_NOT_FOUND"
+    ITEM_NOT_FOUND = "ITEM_NOT_FOUND"
+    AMBIGUOUS_MATCH = "AMBIGUOUS_MATCH"
+    DUPLICATE_PO_IDENTITY = "DUPLICATE_PO_IDENTITY"
+    UNIT_MISMATCH = "UNIT_MISMATCH"
+    INVALID_QUANTITY = "INVALID_QUANTITY"
+    INVALID_UNIT_PRICE = "INVALID_UNIT_PRICE"
+    INVALID_LINE_TOTAL = "INVALID_LINE_TOTAL"
+    WRONG_RECORD_TYPE = "WRONG_RECORD_TYPE"
+    UNSUPPORTED_SCHEMA = "UNSUPPORTED_SCHEMA"
+
+
+@dataclass(frozen=True, slots=True)
+class MatchedRecordReference:
+    """Path-free provenance for a single invoice or purchase-order row."""
+
+    document_id: str
+    document_name: str
+    record_id: str
+    sheet_name: str | None
+    row_number: int
+    record_label: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class QuantityVariance:
+    invoice_quantity: Decimal
+    po_quantity: Decimal
+    variance: Decimal
+    direction: str
+
+
+@dataclass(frozen=True, slots=True)
+class MoneyVariance:
+    invoice_amount: Decimal
+    po_amount: Decimal
+    variance: Decimal
+    direction: str
+
+
+@dataclass(frozen=True, slots=True)
+class ReconciliationLine:
+    """One locally calculated comparison and its original-record provenance."""
+
+    reconciliation_id: str
+    status: ReconciliationStatus
+    issue_codes: tuple[ReconciliationIssueCode, ...]
+    invoice: MatchedRecordReference | None
+    purchase_order: MatchedRecordReference | None
+    invoice_number: str | None
+    po_number: str | None
+    item_name: str | None
+    sku: str | None
+    unit: str | None
+    invoice_source_line_total: Decimal | None
+    quantity_variance: QuantityVariance | None
+    unit_price_variance: MoneyVariance | None
+    invoice_line_total_variance: MoneyVariance | None
+    extended_variance: MoneyVariance | None
+
+
+@dataclass(frozen=True, slots=True)
+class ReconciliationSummary:
+    matched_line_count: int
+    variance_line_count: int
+    missing_on_po_count: int
+    missing_on_invoice_count: int
+    total_monetary_variance: Decimal
+    monetary_variance_line_count: int
+
+
+@dataclass(frozen=True, slots=True)
+class ReconciliationResult:
+    """Immutable output of the offline reconciliation engine."""
+
+    reconciliation_version: str
+    lines: tuple[ReconciliationLine, ...]
+    summary: ReconciliationSummary
 
 
 @dataclass(frozen=True, slots=True)

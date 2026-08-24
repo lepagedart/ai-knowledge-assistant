@@ -78,3 +78,15 @@ Invoices, purchase orders, vendor records, and product/catalog records are not
 V1 evidence. Supporting them would require format-specific ingestion,
 deterministic structured-data validation, and appropriate business logic before
 they could become assistant evidence.
+# Invoice ↔ PO reconciliation V1
+
+V1 provides deterministic line matching, quantity and unit-price variances,
+safe extended-total checks, missing lines, ambiguity and unit-mismatch states,
+and safe aggregate totals. Totals only include lines with complete valid money
+inputs. It excludes journal entries, payment approval, purchasing advice, fraud
+scoring, OCR, vendor/email/accounting integrations, and autonomous actions.
+V1 performs no unit conversion: incompatible explicit units remain unresolved.
+It does not allocate one invoice line across multiple PO lines or reuse one PO
+line across invoice lines; matching is one-to-one in stable source order.
+Source-supplied line totals are distinct from locally derived quantity ×
+unit-price totals. The default $0.01 monetary tolerance is inclusive at ±$0.01.

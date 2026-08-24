@@ -90,3 +90,18 @@ once within the supplied sources. Display citation metadata is derived only from
 the resolved source. Invalid output becomes a stable unsupported state. This
 proves citation traceability, not semantic entailment. V1 has no UI, memory,
 web search, persistent index, or autonomous behavior.
+# Deterministic reconciliation layer
+
+Structured invoice and PO records are passed to the offline reconciliation
+engine before indexing. It emits immutable reconciliation lines and locally
+rendered evidence sections; those sections go through the normal chunking,
+retrieval, and citation-validation pipeline. The engine makes no network or
+OpenAI calls. PO number establishes context; SKU then exact normalized item
+name establish identity, while vendor is an exact filter. Multiple candidates
+remain ambiguous and are excluded from money totals. There is no fuzzy or
+embedding matching, unit conversion, or multi-PO allocation. One invoice line
+can match at most one PO line, and a PO row is consumed by at most one invoice
+row in stable source order. Source-supplied invoice line totals and locally
+derived quantity × unit-price totals remain separate facts. The default $0.01
+money tolerance is inclusive at both boundaries; incompatible units remain
+unresolved.

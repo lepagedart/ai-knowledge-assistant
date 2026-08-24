@@ -25,7 +25,7 @@
         <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="workspace-navigation">
           <span class="menu-toggle-label">Workspace menu</span><span class="menu-toggle-icon" aria-hidden="true"></span>
         </button>
-        <nav id="workspace-navigation" aria-label="Workspace navigation"><a href="#documents">Documents</a><a href="#ask">Ask</a><a href="#sources">Sources</a></nav>
+        <nav id="workspace-navigation" aria-label="Workspace navigation"><a href="#documents">Documents</a>{% if reconciliation %}<a href="#reconciliation">Reconciliation</a>{% endif %}<a href="#ask">Ask</a><a href="#sources">Sources</a></nav>
         <div class="sidebar-bottom">
           {% if run %}<form action="{{ url_for('reset_workspace') }}" method="post"><button class="text-button" type="submit">Reset workspace</button></form>{% endif %}
           <p class="privacy-note">Your workspace is private to this browser session.</p>
@@ -44,6 +44,7 @@
           {% if run %}<div class="ready-summary"><strong>{{ run.documents|length }} documents</strong><span>{{ run.chunk_count }} searchable chunks</span><span class="status-pill ready">Indexed / ready</span></div><ul class="document-list">{% for document in run.documents %}<li><span>{{ document_display_title(document.original_display_name) }}</span><small>{{ document.document_type.value|upper }} · Ready</small></li>{% endfor %}</ul>{% endif %}
         </section>
         {% if run and run.index %}
+        {% if reconciliation %}<section id="reconciliation" class="panel"><p class="eyebrow">Local calculation</p><h2>Invoice ↔ Purchase Order Reconciliation</h2><div class="ready-summary"><strong>Matched {{ reconciliation.matched }}</strong><span>Variances {{ reconciliation.variances }}</span><span>Missing from PO {{ reconciliation.missing_on_po }}</span><span>Missing from Invoice {{ reconciliation.missing_on_invoice }}</span><span>Total variance {{ reconciliation.total_variance }}</span></div><div class="citation-grid">{% for line in reconciliation.lines %}<article class="citation"><p class="source-number">{{ line.status }}</p><h4>{{ line.item }}</h4><p>Invoice: {{ line.invoice }} · PO: {{ line.po }}</p><p>Extended variance: {{ line.variance }}</p>{% if line.issues %}<p class="locator">{{ line.issues }}</p>{% endif %}</article>{% endfor %}</div></section>{% endif %}
         <section id="ask" class="panel ask-panel"><p class="eyebrow">Step 2</p><h2>Ask your documents</h2><form action="{{ url_for('ask') }}" method="post"><label for="question">Your question</label><div class="question-row"><input id="question" name="question" required placeholder="Ask a question about your documents…" value="{{ question or '' }}"><button type="submit">Ask</button></div></form>{% if examples %}<div class="chips">{% for item in examples %}<button class="chip" type="button" data-question="{{ item }}">{{ item }}</button>{% endfor %}</div>{% endif %}</section>
         {% endif %}
         {% if answer %}

@@ -16,6 +16,7 @@ from .extraction import extract_document, read_accepted_content
 from .models import AcceptedDocument, DocumentType, GroundedAnswer
 from .openai_answers import OpenAIAnswerProvider
 from .openai_embeddings import OpenAIEmbeddingProvider
+from .reconciliation import reconcile, reconciliation_evidence
 from .retrieval import EmbeddingProvider, LocalVectorIndex, build_index, retrieve
 from .structured_records import parse_structured_document, structured_evidence
 from .uploads import UploadValidationError, accept_upload
@@ -33,6 +34,9 @@ _DEMO_DISPLAY_TITLES = {
     "opening_closing_sop.md": "Opening & Closing SOP",
     "refund_service_recovery_policy.md": "Refund & Service Recovery Policy",
     "harbor_hearth_invoices.csv": "Harbor & Hearth Invoices (fictional)",
+    "harbor_hearth_reconciliation_purchase_orders.csv": (
+        "Harbor & Hearth Reconciliation Purchase Orders (fictional)"
+    ),
     "harbor_hearth_vendors.csv": "Harbor & Hearth Vendors (fictional)",
     "harbor_hearth_purchase_orders.xlsx": "Harbor & Hearth Purchase Orders (fictional)",
     "harbor_hearth_products.xlsx": "Harbor & Hearth Products (fictional)",
@@ -50,6 +54,7 @@ class KnowledgeRun:
     is_demo: bool = False
     question: str | None = None
     answer_view: dict[str, Any] | None = None
+    reconciliation: Any | None = None
 
 
 def create_app(config: dict[str, Any] | None = None) -> Flask:
@@ -158,6 +163,9 @@ def _render(app: Flask) -> str:
         answer=run.answer_view if run else None,
         question=run.question if run else None,
         examples=_examples() if run and run.is_demo else (),
+        reconciliation=_reconciliation_view(run.reconciliation)
+        if run and run.reconciliation
+        else None,
         document_display_title=document_display_title,
     )
 
@@ -200,18 +208,27 @@ def _providers(app: Flask) -> tuple[EmbeddingProvider, Any]:
 
 def _index_run(app: Flask, run: KnowledgeRun) -> None:
     embedding_provider, _ = _providers(app)
-    chunks = tuple(
-        chunk
-        for document in run.documents
-        for chunk in chunk_document(
-            structured_evidence(
-                parse_structured_document(
-                    document, read_accepted_content(run.workspace, document)
-                )
+    structured, extracted = [], []
+    for document in run.documents:
+        if document.document_type in {DocumentType.CSV, DocumentType.XLSX}:
+            parsed = parse_structured_document(
+                document, read_accepted_content(run.workspace, document)
             )
-            if document.document_type in {DocumentType.CSV, DocumentType.XLSX}
-            else extract_document(run.workspace, document)
-        )
+            structured.append(parsed)
+            extracted.append(structured_evidence(parsed))
+        else:
+            extracted.append(extract_document(run.workspace, document))
+    records = tuple(
+        record
+        for document in structured
+        for sheet in document.sheets
+        for record in sheet.records
+    )
+    run.reconciliation = reconcile(records)
+    if run.reconciliation.lines:
+        extracted.append(reconciliation_evidence(run.reconciliation))
+    chunks = tuple(
+        chunk for document in extracted for chunk in chunk_document(document)
     )
     run.index = build_index(chunks, embedding_provider)
     run.chunk_count = len(chunks)
@@ -267,7 +284,36 @@ def _examples() -> tuple[str, ...]:
         "What are the opening cash-drawer steps?",
         "What should I do if a guest requests a refund because of an allergen concern?",
         "What is the CEO’s home address?",
+        "Did invoice INV-1048 match its purchase order?",
+        "Which invoice lines differ from their purchase orders?",
     )
+
+
+def _reconciliation_view(result: Any) -> dict[str, Any]:
+    """Safe display projection; never expose internal IDs or source paths."""
+    summary = result.summary
+    return {
+        "matched": summary.matched_line_count,
+        "variances": summary.variance_line_count,
+        "missing_on_po": summary.missing_on_po_count,
+        "missing_on_invoice": summary.missing_on_invoice_count,
+        "total_variance": f"${summary.total_monetary_variance:.2f}",
+        "lines": tuple(
+            {
+                "status": line.status.value.replace("_", " ").title(),
+                "invoice": line.invoice_number or "—",
+                "po": line.po_number or "—",
+                "item": line.item_name or "Unidentified line",
+                "issues": ", ".join(
+                    code.value.replace("_", " ").title() for code in line.issue_codes
+                ),
+                "variance": f"${line.extended_variance.variance:+.2f}"
+                if line.extended_variance
+                else "—",
+            }
+            for line in result.lines
+        ),
+    }
 
 
 if __name__ == "__main__":  # pragma: no cover
