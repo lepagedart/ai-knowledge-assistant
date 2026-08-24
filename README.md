@@ -42,16 +42,23 @@ at paragraphs, then simple sentence boundaries, and finally fixed character
 positions. Chunks retain their parent locator and stable IDs; no AI changes their
 source text.
 
-The implemented retrieval layer is local and in-memory only. A small embedding
-provider interface (`embed_documents` and `embed_query`) isolates any future
-provider, while this repository deliberately contains no live API client or
-answer-generation code. Vectors are validated and ranked with cosine similarity;
-the default 0.2 minimum score is a conservative candidate-evidence filter for
-this V1, not a confidence percentage or proof that an answer is supported.
-Tests inject transparent, deterministic lexical vectors and block network access.
-Indexes are never persisted. Each result retains document, section, chunk, and
-path-free source locator IDs, so a future answer layer can validate a citation
-against an actual retrieved chunk.
+The implemented retrieval layer is local and in-memory only. Its small
+embedding-provider interface (`embed_documents` and `embed_query`) now has an
+OpenAI implementation. When explicitly configured at runtime, exact document
+chunk text is sent to the configured OpenAI embedding model and each question is
+sent for one query embedding. The resulting vectors are used only by the local
+NumPy cosine-similarity ranker; no persistent vector index, database, hosted
+vector service, answer generation, chat, or completions behavior exists.
+
+Set `OPENAI_API_KEY` server-side (for example, in a local ignored `.env` file or
+a deployment secret manager). `OPENAI_EMBEDDING_MODEL` is optional and defaults
+to `text-embedding-3-small`. Never expose either value to browser code or commit
+credentials. This is an external-processing boundary: clients should understand
+that chunk text and questions are sent to OpenAI when this provider is used.
+Automated tests inject fake clients, make no OpenAI calls, and keep the suite-wide
+network guard active. Indexes are never persisted. Each result retains document,
+section, chunk, and path-free source locator IDs, so a future answer layer can
+validate a citation against an actual retrieved chunk.
 
 Answers are grounded in the uploaded materials only. Each material claim is
 shown with visible source citations, so a user can inspect the document section
@@ -92,6 +99,6 @@ See [scope documentation](docs/scope.md), [privacy and data handling](docs/priva
 ## Current status
 
 This foundation contains repository safety rules, deterministic document intake,
-extraction, chunking, local deterministic retrieval, documentation, synthetic
-demo documents, package metadata, and tests. It intentionally does not yet
-include web routes, OpenAI calls, or answer/chat behavior.
+extraction, chunking, local retrieval, an optional OpenAI embedding provider,
+documentation, synthetic demo documents, package metadata, and tests. It does
+not include web routes or answer/chat behavior.
