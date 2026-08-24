@@ -36,3 +36,8 @@ Ask: “What is the CEO’s home address?”
 
 Expected behavior: clearly state that the provided materials do not support an
 answer. Do not guess, search outside the materials, or provide a citation.
+# Structured-record demo questions
+
+The fictional Harbor & Hearth demo includes invoices, purchase orders, vendors,
+and products. Ask about INV-1048, PO-221, or SKU GIN-001; answers should cite
+the exact row.

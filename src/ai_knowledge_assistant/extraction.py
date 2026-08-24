@@ -41,7 +41,7 @@ def extract_document(
     loading. It reads the accepted file once and verifies its exact-byte hash
     before passing bytes to the format-specific extractor.
     """
-    content = _read_accepted_content(workspace, accepted_document)
+    content = read_accepted_content(workspace, accepted_document)
     if accepted_document.document_type is DocumentType.PDF:
         sections = _extract_pdf(accepted_document, content)
     elif accepted_document.document_type is DocumentType.DOCX:
@@ -71,7 +71,7 @@ def extract_document(
     )
 
 
-def _read_accepted_content(
+def read_accepted_content(
     workspace: UploadWorkspace, accepted_document: AcceptedDocument
 ) -> bytes:
     _validate_workspace(workspace)

@@ -1,5 +1,12 @@
 # V1 Scope
 
+## Structured records V1
+
+CSV/XLSX deterministic ingestion supports invoice, purchase order, vendor,
+product catalog, and generic rows with retrieval and grounded citations.
+Financial calculation, reconciliation, accounting, recommendations, analytics,
+OCR, integrations, and autonomous actions remain deferred.
+
 ## Standard implementation — starting at $550
 
 The standard implementation is a focused reference build for one business and

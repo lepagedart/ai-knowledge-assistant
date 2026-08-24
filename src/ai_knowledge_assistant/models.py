@@ -11,6 +11,8 @@ class DocumentType(StrEnum):
     DOCX = "docx"
     TEXT = "txt"
     MARKDOWN = "md"
+    CSV = "csv"
+    XLSX = "xlsx"
 
 
 class UploadErrorCode(StrEnum):
@@ -23,6 +25,8 @@ class UploadErrorCode(StrEnum):
     UNSAFE_FILENAME = "UNSAFE_FILENAME"
     EMPTY_FILE = "EMPTY_FILE"
     MALFORMED_DOCX = "MALFORMED_DOCX"
+    MALFORMED_XLSX = "MALFORMED_XLSX"
+    STRUCTURED_LIMIT_EXCEEDED = "STRUCTURED_LIMIT_EXCEEDED"
     STORAGE_ERROR = "STORAGE_ERROR"
 
 
@@ -54,6 +58,7 @@ class SourceLocatorKind(StrEnum):
     PDF_PAGE = "pdf_page"
     DOCUMENT_SECTION = "document_section"
     TEXT_LINE_RANGE = "text_line_range"
+    STRUCTURED_ROW = "structured_row"
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +73,74 @@ class SourceLocator:
     line_end: int | None = None
     paragraph_start: int | None = None
     paragraph_end: int | None = None
+    sheet_name: str | None = None
+    row_number: int | None = None
+    record_label: str | None = None
+
+
+class StructuredRecordType(StrEnum):
+    """Conservative deterministic classifications for tabular records."""
+
+    INVOICE = "invoice"
+    PURCHASE_ORDER = "purchase_order"
+    VENDOR = "vendor"
+    PRODUCT_CATALOG = "product_catalog"
+    GENERIC_TABULAR = "generic_tabular"
+
+
+@dataclass(frozen=True, slots=True)
+class StructuredField:
+    """One source-preserving field from a tabular row."""
+
+    original_header: str
+    canonical_name: str
+    original_value: str | None
+    normalized_value: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class StructuredSourceLocator:
+    """Exact path-free lineage for one structured source row."""
+
+    sheet_name: str | None
+    row_number: int
+    record_label: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class StructuredRecord:
+    """A normalized immutable record with original values retained."""
+
+    record_id: str
+    document_id: str
+    document_name: str
+    document_type: DocumentType
+    record_type: StructuredRecordType
+    record_index: int
+    fields: tuple[StructuredField, ...]
+    source_locator: StructuredSourceLocator
+    content_hash: str
+
+
+@dataclass(frozen=True, slots=True)
+class StructuredSheet:
+    """One non-empty CSV table or XLSX worksheet."""
+
+    sheet_name: str | None
+    headers: tuple[str, ...]
+    records: tuple[StructuredRecord, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class StructuredDocument:
+    """Deterministic parsed representation of one structured upload."""
+
+    parsing_version: str
+    document_id: str
+    document_display_name: str
+    document_type: DocumentType
+    source_content_hash: str
+    sheets: tuple[StructuredSheet, ...]
 
 
 @dataclass(frozen=True, slots=True)

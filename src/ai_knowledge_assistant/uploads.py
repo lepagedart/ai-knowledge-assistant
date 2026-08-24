@@ -24,8 +24,12 @@ _TYPE_BY_EXTENSION = {
     ".docx": DocumentType.DOCX,
     ".txt": DocumentType.TEXT,
     ".md": DocumentType.MARKDOWN,
+    ".csv": DocumentType.CSV,
+    ".xlsx": DocumentType.XLSX,
 }
 _DOCX_REQUIRED_MEMBERS = {"[Content_Types].xml", "word/document.xml"}
+_XLSX_REQUIRED_MEMBERS = {"[Content_Types].xml", "xl/workbook.xml"}
+MAX_ARCHIVE_UNCOMPRESSED_SIZE_BYTES = 50 * 1024 * 1024
 
 
 def accept_upload(
@@ -120,7 +124,7 @@ def _document_type_for(filename: str) -> DocumentType:
     if document_type is None:
         raise UploadValidationError(
             UploadErrorCode.UNSUPPORTED_FILE_TYPE,
-            "V1 accepts PDF, DOCX, TXT, and Markdown files only.",
+            "V1 accepts PDF, DOCX, TXT, Markdown, CSV, and XLSX files only.",
         )
     return document_type
 
@@ -133,28 +137,56 @@ def _validate_content(document_type: DocumentType, content: bytes) -> None:
                 "The PDF file signature is invalid.",
             )
     elif document_type is DocumentType.DOCX:
-        _validate_docx(content)
+        _validate_office_zip(
+            content, _DOCX_REQUIRED_MEMBERS, UploadErrorCode.MALFORMED_DOCX, "DOCX"
+        )
+    elif document_type is DocumentType.XLSX:
+        _validate_office_zip(
+            content, _XLSX_REQUIRED_MEMBERS, UploadErrorCode.MALFORMED_XLSX, "XLSX"
+        )
     else:
         _validate_utf8_text(content)
 
 
-def _validate_docx(content: bytes) -> None:
+def _validate_office_zip(
+    content: bytes, required_members: set[str], code: UploadErrorCode, label: str
+) -> None:
     if not content.startswith(b"PK"):
         raise UploadValidationError(
-            UploadErrorCode.MALFORMED_DOCX,
-            "A DOCX file must be a valid Office ZIP container.",
+            code,
+            f"A {label} file must be a valid Office ZIP container.",
         )
     try:
         with zipfile.ZipFile(BytesIO(content)) as archive:
             members = set(archive.namelist())
+            infos = archive.infolist()
     except zipfile.BadZipFile as error:
         raise UploadValidationError(
-            UploadErrorCode.MALFORMED_DOCX, "The DOCX archive is malformed."
+            code, f"The {label} archive is malformed."
         ) from error
-    if not _DOCX_REQUIRED_MEMBERS.issubset(members):
+    if any(
+        member.filename.startswith(("/", "\\"))
+        or "\\" in member.filename
+        or ".." in Path(member.filename).parts
+        for member in infos
+    ):
+        raise UploadValidationError(code, f"The {label} archive contains unsafe paths.")
+    if label == "XLSX" and any(
+        member.filename.lower().endswith("vbaproject.bin")
+        or member.filename.startswith("xl/externalLinks/")
+        for member in infos
+    ):
         raise UploadValidationError(
-            UploadErrorCode.MALFORMED_DOCX,
-            "The DOCX archive is missing required document parts.",
+            code, "XLSX workbooks with macros or external links are unsupported."
+        )
+    if sum(member.file_size for member in infos) > MAX_ARCHIVE_UNCOMPRESSED_SIZE_BYTES:
+        raise UploadValidationError(
+            code, f"The {label} archive is too large after decompression."
+        )
+    if not required_members.issubset(members):
+        raise UploadValidationError(
+            code,
+            f"The {label} archive is missing required document parts.",
         )
 
 
@@ -165,12 +197,20 @@ def _validate_utf8_text(content: bytes) -> None:
             "Text files must be UTF-8 text, not binary data.",
         )
     try:
-        content.decode("utf-8")
+        decoded = content.decode("utf-8")
     except UnicodeDecodeError as error:
         raise UploadValidationError(
             UploadErrorCode.INVALID_TEXT_ENCODING,
             "Text files must use UTF-8 encoding.",
         ) from error
+    controls = sum(
+        ord(character) < 32 and character not in "\t\n\r" for character in decoded
+    )
+    if controls:
+        raise UploadValidationError(
+            UploadErrorCode.INVALID_TEXT_ENCODING,
+            "Text files must be UTF-8 text, not binary data.",
+        )
 
 
 def _write_new_file(
