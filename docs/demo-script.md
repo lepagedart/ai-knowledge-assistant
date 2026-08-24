@@ -41,3 +41,11 @@ answer. Do not guess, search outside the materials, or provide a citation.
 The fictional Harbor & Hearth demo includes invoices, purchase orders, vendors,
 and products. Ask about INV-1048, PO-221, or SKU GIN-001; answers should cite
 the exact row.
+# Reconciliation demo
+
+Load Harbor & Hearth and inspect the reconciliation panel. It includes a
+London Dry Gin price variance on INV-1048, exact tonic match, Espresso Beans
+quantity variance, an extra Club Soda invoice line, an Ice Cubes PO line not
+invoiced, ambiguous House Bitters, and a London Dry Gin Reserve unit mismatch.
+Ask questions about INV-1048 or lines that differ; responses cite the locally
+generated reconciliation evidence.

@@ -1,4 +1,7 @@
-Invoice Number,Invoice Date,Vendor,Item,Quantity,Unit Price,Line Total
-INV-1048,2026-08-01,Granite State Beverage,London Dry Gin,6,24.50,147.00
-INV-1049,2026-08-03,North Coast Coffee,Espresso Beans,4,18.00,72.00
-INV-1050,2026-08-04,Granite State Beverage,London Dry Gin Reserve,2,36.00,72.00
+Invoice Number,PO Number,Invoice Date,Vendor,SKU,Item,Quantity,Unit Price,Line Total,Unit
+INV-1048,PO-221,2026-08-01,Granite State Beverage,GIN-001,London Dry Gin,6,24.50,147.00,bottle
+INV-1048,PO-221,2026-08-01,Granite State Beverage,TON-001,Tonic Water,24,1.75,42.00,bottle
+INV-1049,PO-222,2026-08-03,North Coast Coffee,ESP-001,Espresso Beans,5,18.00,90.00,bag
+INV-1050,PO-223,2026-08-04,Granite State Beverage,VER-001,London Dry Gin Reserve,2,36.00,72.00,case
+INV-1051,PO-221,2026-08-05,Granite State Beverage,EXTRA-001,Club Soda,3,2.00,6.00,bottle
+INV-1052,PO-224,2026-08-06,Granite State Beverage,,House Bitters,1,12.00,12.00,bottle

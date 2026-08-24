@@ -83,7 +83,7 @@ def test_landing_upload_and_demo_workflows_are_safe_and_ready(tmp_path: Path) ->
     assert b"Turn your business documents" in landing.data
     assert b"guide.md" in uploaded.data
     assert b"Indexed / ready" in uploaded.data
-    assert b"10 documents" in demo.data
+    assert b"11 documents" in demo.data
     assert b"Synthetic Harbor &amp; Hearth demo" in demo.data
     assert str(tmp_path).encode() not in demo.data
     assert b"test-secret" not in demo.data

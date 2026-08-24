@@ -1,5 +1,22 @@
 # AI Knowledge Assistant
 
+## Invoice ↔ Purchase Order reconciliation
+
+V1 compares uploaded structured invoice and purchase-order rows locally, using
+`Decimal` arithmetic. The assistant may explain the generated reconciliation
+evidence, but it never performs or overrides a financial comparison. Matching
+requires an explicit PO number, then prefers exact SKU and otherwise exact
+normalized item name, with exact vendor context as a filter. Ambiguous matches,
+unit conflicts, malformed values, and incomplete monetary inputs are retained
+as explicit states rather than inferred. The default money tolerance is $0.01;
+quantity comparison is exact and inclusive: a variance from -$0.01 through
++$0.01 is within tolerance. V1 performs **no unit conversion**; incompatible
+units remain unresolved. It does not support multi-PO allocation: one invoice
+line matches at most one PO line and each PO line is consumed by at most one
+invoice line in stable source order. Invoice source line totals remain distinct
+from locally derived quantity × unit-price totals. No accounting, approvals,
+recommendations, OCR, or integrations are included.
+
 A small, grounded business knowledge assistant reference implementation for the
 **Custom AI Knowledge Assistant — starting at $550** service. It demonstrates a
 simple workflow: a business provides internal reference materials, the
