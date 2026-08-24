@@ -86,7 +86,7 @@ entailment. Source excerpts are treated as untrusted data, not instructions.
 
 The optional `OpenAIAnswerProvider` uses the official Responses API with strict
 JSON Schema, one request at most per supported query, no retries, and
-`OPENAI_ANSWER_MODEL` (default `gpt-4.1-mini`). Retrieved excerpts and the
+`OPENAI_ANSWER_MODEL` (default `gpt-5.6-luna`). Retrieved excerpts and the
 question are sent to OpenAI; no filesystem paths, vectors, unrelated documents,
 or credentials are sent. There is no general-knowledge answering, chat memory,
 or multi-turn state. Tests use fake providers and remain offline.

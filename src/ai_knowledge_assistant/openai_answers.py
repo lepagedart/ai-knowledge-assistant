@@ -10,7 +10,7 @@ from typing import Any
 from .answer_generation import build_grounded_prompt
 from .models import ProviderAnswer, ProviderCitation, RetrievedSource
 
-DEFAULT_OPENAI_ANSWER_MODEL = "gpt-4.1-mini"
+DEFAULT_OPENAI_ANSWER_MODEL = "gpt-5.6-luna"
 
 ANSWER_RESPONSE_SCHEMA = {
     "type": "object",
