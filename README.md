@@ -12,6 +12,14 @@ runtime data to this repository.
 
 ## V1 outcome
 
+### Structured business records (V1)
+
+Alongside ordinary knowledge documents, V1 accepts UTF-8 CSV and non-macro XLSX
+business records. Explicit aliases are normalized deterministically and each
+invoice, purchase-order, vendor, product, or generic row becomes citation-ready
+evidence. It does not perform calculations, reconciliation, recommendations,
+OCR, or automatic actions. Harbor & Hearth fixtures are fictional.
+
 The finished V1 is intended to support one business and one knowledge
 assistant. It will accept a reasonably sized collection of standard business
 documents in these formats:

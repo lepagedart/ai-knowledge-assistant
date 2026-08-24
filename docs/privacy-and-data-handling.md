@@ -63,3 +63,9 @@ clear deletion path for each workspace. Local/demo V1 is not a document archive,
 records-management system, or compliance storage solution. It does not promise
 enterprise retention controls, legal holds, backups, audit trails, residency
 guarantees, or production security certification.
+# Structured records
+
+CSV and XLSX uploads remain temporary workspace data. Only retrieved evidence
+uses the existing embedding/answer provider boundaries. The parser does not
+load external workbook links, macros, or formulas; no client content is used as
+a committed fixture.

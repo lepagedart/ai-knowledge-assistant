@@ -12,11 +12,12 @@ from flask import Flask, flash, redirect, render_template, request, session, url
 
 from .answer_generation import generate_grounded_answer
 from .chunking import chunk_document
-from .extraction import extract_document
-from .models import AcceptedDocument, GroundedAnswer
+from .extraction import extract_document, read_accepted_content
+from .models import AcceptedDocument, DocumentType, GroundedAnswer
 from .openai_answers import OpenAIAnswerProvider
 from .openai_embeddings import OpenAIEmbeddingProvider
 from .retrieval import EmbeddingProvider, LocalVectorIndex, build_index, retrieve
+from .structured_records import parse_structured_document, structured_evidence
 from .uploads import UploadValidationError, accept_upload
 from .workspace import UploadWorkspace
 
@@ -31,6 +32,10 @@ _DEMO_DISPLAY_TITLES = {
     "new_team_member_training_guide.md": "New Team Member Training Guide",
     "opening_closing_sop.md": "Opening & Closing SOP",
     "refund_service_recovery_policy.md": "Refund & Service Recovery Policy",
+    "harbor_hearth_invoices.csv": "Harbor & Hearth Invoices (fictional)",
+    "harbor_hearth_vendors.csv": "Harbor & Hearth Vendors (fictional)",
+    "harbor_hearth_purchase_orders.xlsx": "Harbor & Hearth Purchase Orders (fictional)",
+    "harbor_hearth_products.xlsx": "Harbor & Hearth Products (fictional)",
 }
 
 
@@ -69,7 +74,9 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
     def load_demo() -> Any:
         run = _reset_run(app)
         try:
-            for path in sorted(DEMO_DIRECTORY.glob("*.md")):
+            for path in sorted(DEMO_DIRECTORY.iterdir()):
+                if not path.is_file():
+                    continue
                 run.documents.append(
                     accept_upload(run.workspace, path.name, path.read_bytes())
                 )
@@ -196,7 +203,15 @@ def _index_run(app: Flask, run: KnowledgeRun) -> None:
     chunks = tuple(
         chunk
         for document in run.documents
-        for chunk in chunk_document(extract_document(run.workspace, document))
+        for chunk in chunk_document(
+            structured_evidence(
+                parse_structured_document(
+                    document, read_accepted_content(run.workspace, document)
+                )
+            )
+            if document.document_type in {DocumentType.CSV, DocumentType.XLSX}
+            else extract_document(run.workspace, document)
+        )
     )
     run.index = build_index(chunks, embedding_provider)
     run.chunk_count = len(chunks)
@@ -238,6 +253,11 @@ def _locator_text(citation: Any) -> str:
         return locator.section_label
     if locator.line_start:
         return f"Lines {locator.line_start}–{locator.line_end or locator.line_start}"
+    if locator.row_number:
+        base = (
+            f"{locator.sheet_name or citation.document_name} — Row {locator.row_number}"
+        )
+        return f"{locator.record_label} — {base}" if locator.record_label else base
     return "Document section"
 
 

@@ -6,8 +6,16 @@ from io import BytesIO
 from pathlib import Path
 from typing import Sequence
 
-from ai_knowledge_assistant.models import ProviderAnswer, ProviderCitation
-from ai_knowledge_assistant.web import create_app, document_display_title
+from ai_knowledge_assistant.models import (
+    GroundedAnswer,
+    GroundedAnswerStatus,
+    GroundedCitation,
+    ProviderAnswer,
+    ProviderCitation,
+    SourceLocator,
+    SourceLocatorKind,
+)
+from ai_knowledge_assistant.web import _answer_view, create_app, document_display_title
 
 
 class FakeEmbeddingProvider:
@@ -75,10 +83,54 @@ def test_landing_upload_and_demo_workflows_are_safe_and_ready(tmp_path: Path) ->
     assert b"Turn your business documents" in landing.data
     assert b"guide.md" in uploaded.data
     assert b"Indexed / ready" in uploaded.data
-    assert b"6 documents" in demo.data
+    assert b"10 documents" in demo.data
     assert b"Synthetic Harbor &amp; Hearth demo" in demo.data
     assert str(tmp_path).encode() not in demo.data
     assert b"test-secret" not in demo.data
+
+
+def test_structured_demo_files_and_citation_card_render_without_internal_ids(
+    tmp_path: Path,
+) -> None:
+    app = _app(tmp_path)
+    client = app.test_client()
+    response = client.post("/demo", follow_redirects=True)
+    run = next(iter(app.extensions["knowledge_runs"].values()))
+    run.answer_view = _answer_view(
+        GroundedAnswer(
+            GroundedAnswerStatus.SUPPORTED,
+            "INV-1048 records $147.00 for London Dry Gin.",
+            (
+                GroundedCitation(
+                    "internal-structured-id",
+                    "Invoice evidence.",
+                    "harbor_hearth_invoices.csv",
+                    SourceLocator(
+                        SourceLocatorKind.STRUCTURED_ROW,
+                        row_number=2,
+                        record_label="INV-1048",
+                    ),
+                    "Record type: Invoice\nInvoice Number: INV-1048",
+                    1,
+                ),
+            ),
+            ("internal-structured-id",),
+        )
+    )
+    rendered = client.get("/")
+
+    with client.session_transaction() as browser_session:
+        session_data = dict(browser_session)
+
+    assert b"Harbor &amp; Hearth Invoices (fictional)" in response.data
+    assert b"Harbor &amp; Hearth Products (fictional)" in response.data
+    assert b"Invoice INV-1048" not in rendered.data  # label is intentionally compact
+    assert b"INV-1048" in rendered.data
+    assert b"Row 2" in rendered.data
+    assert b"internal-structured-id" not in rendered.data
+    assert b"chunk_id" not in rendered.data
+    assert session_data.keys() == {"run_id"}
+    assert "INV-1048" not in str(session_data)
 
 
 def test_landing_renders_the_inline_gold_brand_mark_without_external_images(
@@ -129,7 +181,7 @@ def test_multiple_upload_rejections_reset_and_session_isolation(tmp_path: Path) 
     reset = first.post("/reset", follow_redirects=True)
 
     assert b"2 documents" in response.data
-    assert b"V1 accepts PDF, DOCX, TXT, and Markdown" in rejected.data
+    assert b"V1 accepts PDF, DOCX, TXT, Markdown, CSV, and XLSX" in rejected.data
     assert b"one.md" not in second.get("/").data
     assert b"Workspace reset" in reset.data
     assert not app.extensions["knowledge_runs"]
@@ -250,8 +302,10 @@ def test_unsupported_and_provider_failure_are_safe_ui_states(tmp_path: Path) -> 
 
 
 def test_empty_workspace_ask_requires_documents(tmp_path: Path) -> None:
-    response = _app(tmp_path).test_client().post(
-        "/ask", data={"question": "question"}, follow_redirects=True
+    response = (
+        _app(tmp_path)
+        .test_client()
+        .post("/ask", data={"question": "question"}, follow_redirects=True)
     )
 
     assert b"Add and prepare documents" in response.data

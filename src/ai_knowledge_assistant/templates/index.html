@@ -36,11 +36,11 @@
         {% if not run %}
         <section class="hero"><p class="eyebrow">Grounded business knowledge</p><h1>Turn your business documents into a grounded AI knowledge assistant.</h1><p>Answers are based only on your supplied documents and always include source references.</p>
           <div class="actions"><form action="{{ url_for('load_demo') }}" method="post"><button type="submit">Use Harbor &amp; Hearth Demo</button></form><a class="button secondary" href="#upload">Upload Documents</a></div>
-          <p class="helper">Synthetic Demo Content · PDF, DOCX, TXT, Markdown · 10 MiB per file</p>
+          <p class="helper">Synthetic Demo Content · PDF, DOCX, TXT, Markdown, CSV, XLSX · 10 MiB per file</p>
         </section>
         {% endif %}
         <section id="documents" class="panel"><p class="eyebrow">Step 1</p><h2>Documents</h2>
-          <form id="upload" action="{{ url_for('upload_documents') }}" method="post" enctype="multipart/form-data"><label for="documents">Add business documents</label><input id="documents" name="documents" type="file" multiple accept=".pdf,.docx,.txt,.md" required><p class="helper">PDF, DOCX, TXT, or Markdown. Maximum 10 MiB per file.</p><button type="submit">Upload and prepare</button></form>
+          <form id="upload" action="{{ url_for('upload_documents') }}" method="post" enctype="multipart/form-data"><label for="documents">Add business documents</label><input id="documents" name="documents" type="file" multiple accept=".pdf,.docx,.txt,.md,.csv,.xlsx" required><p class="helper">PDF, DOCX, TXT, Markdown, CSV, or XLSX. Maximum 10 MiB per file.</p><button type="submit">Upload and prepare</button></form>
           {% if run %}<div class="ready-summary"><strong>{{ run.documents|length }} documents</strong><span>{{ run.chunk_count }} searchable chunks</span><span class="status-pill ready">Indexed / ready</span></div><ul class="document-list">{% for document in run.documents %}<li><span>{{ document_display_title(document.original_display_name) }}</span><small>{{ document.document_type.value|upper }} · Ready</small></li>{% endfor %}</ul>{% endif %}
         </section>
         {% if run and run.index %}

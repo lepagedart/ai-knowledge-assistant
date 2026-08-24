@@ -220,4 +220,8 @@ def _display_locator(source: RetrievedSource) -> str:
     if locator.line_start is not None:
         end = locator.line_end if locator.line_end is not None else locator.line_start
         return f"lines {locator.line_start}-{end}"
+    if locator.row_number is not None:
+        sheet = locator.sheet_name or source.document_name
+        label = f"{locator.record_label} — " if locator.record_label else ""
+        return f"{label}{sheet} — row {locator.row_number}"
     return "document section"

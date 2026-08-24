@@ -1,5 +1,14 @@
 # Planned V1 Architecture
 
+## Structured business records
+
+CSV/XLSX follows validation → bounded parsing → explicit header
+normalization/classification → immutable records → row-sized evidence → the
+existing chunk, embedding, local-index, and grounded-answer pipeline. Citations
+retain filename, worksheet when applicable, row, and a local record label.
+Formula cells are unavailable; formulas, macros, and external links are never
+executed or fetched.
+
 ```text
 Ingestion → extraction → chunking → embeddings → retrieval → grounded answer
 ```
