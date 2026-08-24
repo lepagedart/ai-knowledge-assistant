@@ -42,6 +42,17 @@ at paragraphs, then simple sentence boundaries, and finally fixed character
 positions. Chunks retain their parent locator and stable IDs; no AI changes their
 source text.
 
+The implemented retrieval layer is local and in-memory only. A small embedding
+provider interface (`embed_documents` and `embed_query`) isolates any future
+provider, while this repository deliberately contains no live API client or
+answer-generation code. Vectors are validated and ranked with cosine similarity;
+the default 0.2 minimum score is a conservative candidate-evidence filter for
+this V1, not a confidence percentage or proof that an answer is supported.
+Tests inject transparent, deterministic lexical vectors and block network access.
+Indexes are never persisted. Each result retains document, section, chunk, and
+path-free source locator IDs, so a future answer layer can validate a citation
+against an actual retrieved chunk.
+
 Answers are grounded in the uploaded materials only. Each material claim is
 shown with visible source citations, so a user can inspect the document section
 that supports it. When the materials do not support an answer, the assistant
@@ -80,7 +91,7 @@ See [scope documentation](docs/scope.md), [privacy and data handling](docs/priva
 
 ## Current status
 
-This foundation contains repository safety rules, deterministic document intake
-and text extraction, documentation, synthetic demo documents, package metadata,
-and tests. It intentionally does not yet include web routes, OpenAI calls,
-embeddings, retrieval, or chat behavior.
+This foundation contains repository safety rules, deterministic document intake,
+extraction, chunking, local deterministic retrieval, documentation, synthetic
+demo documents, package metadata, and tests. It intentionally does not yet
+include web routes, OpenAI calls, or answer/chat behavior.

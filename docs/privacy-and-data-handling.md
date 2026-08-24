@@ -23,7 +23,9 @@ malware protection.
 Client files must never be committed to this public repository. The repository
 contains only fictional Harbor & Hearth Café material for demonstration and
 testing. Runtime upload folders, indexes, local databases, caches, and generated
-artifacts are ignored by Git.
+artifacts are ignored by Git. The implemented V1 vector index is in memory only;
+it neither writes a persistent client index nor uses a database or hosted vector
+service. Retrieval does not log source text or questions.
 
 ## Credentials and providers
 
@@ -31,8 +33,10 @@ API keys are supplied through environment variables or a deployment secret
 manager, never browser code, source files, fixtures, logs, or commits.
 `.env.example` is deliberately keyless; local `.env` files are ignored.
 
-When the OpenAI-backed answer and embedding layers are implemented, relevant
-uploaded text and user questions will be sent to OpenAI for that processing.
+No live embedding or answer provider is implemented yet, and test embeddings are
+deterministic local mappings with network access blocked by the test suite. When
+an OpenAI-backed answer and embedding layer is intentionally added later,
+relevant uploaded text and user questions may be sent to OpenAI for processing.
 Clients should review the applicable OpenAI service and data-handling terms
 before using the implementation with non-demo information.
 

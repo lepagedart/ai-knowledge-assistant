@@ -116,6 +116,62 @@ class DocumentChunk:
     chunking_version: str
 
 
+@dataclass(frozen=True, slots=True)
+class EmbeddedChunk:
+    """A chunk and its validated local embedding, with citation lineage intact."""
+
+    chunk_id: str
+    document_id: str
+    document_name: str
+    document_type: DocumentType
+    section_id: str
+    chunk_index: int
+    source_locator: SourceLocator
+    text: str
+    content_hash: str
+    source_section_content_hash: str
+    source_char_start: int
+    source_char_end: int
+    primary_char_start: int
+    primary_char_end: int
+    embedding: tuple[float, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class RetrievedSource:
+    """One ranked, citation-ready local retrieval candidate."""
+
+    rank: int
+    score: float
+    chunk_id: str
+    document_id: str
+    document_name: str
+    document_type: DocumentType
+    section_id: str
+    chunk_index: int
+    source_locator: SourceLocator
+    text: str
+    content_hash: str
+    source_section_content_hash: str
+    source_char_start: int
+    source_char_end: int
+    primary_char_start: int
+    primary_char_end: int
+
+
+@dataclass(frozen=True, slots=True)
+class RetrievalResult:
+    """The normalized question and ordered evidence candidates for it."""
+
+    question: str
+    sources: tuple[RetrievedSource, ...]
+
+    @property
+    def has_results(self) -> bool:
+        """Whether one or more candidates met the requested relevance threshold."""
+        return bool(self.sources)
+
+
 class ExtractionErrorCode(StrEnum):
     """Stable errors produced by the deterministic extraction boundary."""
 
