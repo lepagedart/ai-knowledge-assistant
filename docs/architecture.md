@@ -64,6 +64,20 @@ citation using retrieved chunk IDs alone. Tests substitute deterministic fake
 providers/clients and block network access. Production calls are limited to the
 OpenAI embeddings endpoint when the optional provider is explicitly used.
 
-No answer provider, chat/completions integration, or answer synthesis is
-implemented. Those remain future work and must validate citations against actual
-retrieved chunk identifiers before presenting an answer.
+## Grounded answer generation
+
+`generate_grounded_answer(question, sources, provider)` accepts only existing
+`RetrievedSource` records and never invokes retrieval. It selects rank-ordered
+whole sources under configurable maximum-source and maximum-character caps;
+sources are never split away from their IDs or metadata. The controlled context
+contains only chunk ID, document display name, locator, and excerpt.
+
+The answer provider returns structured `ProviderAnswer`/`ProviderCitation`
+records. `OpenAIAnswerProvider` uses a strict JSON Schema Responses API request,
+with no retry or repair request. Prompts require evidence-only answers and say
+that excerpts are untrusted data, never instructions. Local validation requires
+a supported status, bounded non-empty answer, and citations resolving exactly
+once within the supplied sources. Display citation metadata is derived only from
+the resolved source. Invalid output becomes a stable unsupported state. This
+proves citation traceability, not semantic entailment. V1 has no UI, memory,
+web search, persistent index, or autonomous behavior.

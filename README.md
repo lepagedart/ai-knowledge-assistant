@@ -69,6 +69,28 @@ The included Harbor & Hearth Café documents are fictional demo data used to
 demonstrate supported answers, multi-document answers, source traceability, and
 unsupported-question handling.
 
+## Grounded answers and citations
+
+The grounded answer service accepts a question and already-retrieved candidate
+sources; it never performs retrieval itself. Its injected provider receives only
+a bounded, rank-ordered set of selected excerpts and must return structured JSON
+with a status, answer, and chunk-ID citations. The application resolves each
+citation locally against the current retrieved source set. Display document
+names, locators, excerpts, and ranks come from those sources, never the model.
+
+A supported answer requires at least one valid citation. Missing, malformed, or
+unretrieved citations, malformed output, and empty retrieval all return the
+stable no-support state rather than model text. Traceability verifies that a
+citation names a retrieved excerpt; V1 does not claim perfect semantic
+entailment. Source excerpts are treated as untrusted data, not instructions.
+
+The optional `OpenAIAnswerProvider` uses the official Responses API with strict
+JSON Schema, one request at most per supported query, no retries, and
+`OPENAI_ANSWER_MODEL` (default `gpt-4.1-mini`). Retrieved excerpts and the
+question are sent to OpenAI; no filesystem paths, vectors, unrelated documents,
+or credentials are sent. There is no general-knowledge answering, chat memory,
+or multi-turn state. Tests use fake providers and remain offline.
+
 ## Deliberate V1 boundary
 
 V1 is not:

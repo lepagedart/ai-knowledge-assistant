@@ -46,6 +46,16 @@ validation make no API call. Clients should review the applicable OpenAI service
 and data-handling terms before sending non-demo information across this external-
 processing boundary.
 
+## Answer generation
+
+`OpenAIAnswerProvider` is optional. When selected, it sends one question and
+only the current selected retrieved excerpts to OpenAI for structured answer
+generation. It does not send filesystem paths, vectors, unrelated documents, or
+credentials. Citations are resolved locally. Provider boundaries do not log
+questions or excerpts, and unsupported states never display speculative model
+text. There is no chat memory, persistent conversation storage, hosted vector
+database, or automatic live demo-corpus answer test.
+
 ## Retention and deletion expectations
 
 The implementation should provide a defined temporary retention period and a
