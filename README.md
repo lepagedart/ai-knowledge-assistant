@@ -27,6 +27,21 @@ temporary run workspace, and assigned an exact-byte SHA-256 integrity hash.
 Successful validation only confirms that a file is acceptable for future
 processing; it does not mean that text has been extracted, indexed, or answered.
 
+The current deterministic extraction layer converts accepted files into
+citation-ready text sections without AI or network calls. PDF text is extracted
+page by page when a text layer exists; V1 does not OCR scanned or image-only
+pages. DOCX extraction captures paragraph text and heading styles only, ignoring
+unsupported complex objects. TXT and Markdown use strict UTF-8, conservative
+normalization, and source locators such as heading labels, line ranges, or PDF
+page numbers.
+
+Extracted sections are then chunked deterministically for future retrieval. V1
+uses a configurable character-based policy (3,000 characters maximum and 300
+characters of overlap by default), preserving section boundaries before splitting
+at paragraphs, then simple sentence boundaries, and finally fixed character
+positions. Chunks retain their parent locator and stable IDs; no AI changes their
+source text.
+
 Answers are grounded in the uploaded materials only. Each material claim is
 shown with visible source citations, so a user can inspect the document section
 that supports it. When the materials do not support an answer, the assistant
@@ -65,6 +80,7 @@ See [scope documentation](docs/scope.md), [privacy and data handling](docs/priva
 
 ## Current status
 
-This foundation contains repository safety rules, documentation, synthetic demo
-documents, package metadata, and tests. It intentionally does not yet include
-web routes, OpenAI calls, embeddings, retrieval, or chat behavior.
+This foundation contains repository safety rules, deterministic document intake
+and text extraction, documentation, synthetic demo documents, package metadata,
+and tests. It intentionally does not yet include web routes, OpenAI calls,
+embeddings, retrieval, or chat behavior.

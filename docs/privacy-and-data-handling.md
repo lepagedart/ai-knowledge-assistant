@@ -13,6 +13,13 @@ or strict UTF-8 text as appropriate, and records a SHA-256 digest of the exact
 accepted bytes. This is an input-safety and provenance check, not text
 extraction, malware detection, OCR, semantic review, or indexing.
 
+The deterministic extraction layer reads only a workspace-owned accepted file
+whose exact-byte hash still matches its accepted metadata. It keeps source
+locators needed for future citations, including PDF page numbers, DOCX/Markdown
+heading labels, and TXT line ranges. It does not send content to an AI provider,
+perform OCR, execute macros or scripts, render remote resources, or provide
+malware protection.
+
 Client files must never be committed to this public repository. The repository
 contains only fictional Harbor & Hearth Café material for demonstration and
 testing. Runtime upload folders, indexes, local databases, caches, and generated
