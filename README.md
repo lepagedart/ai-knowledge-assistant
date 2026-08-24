@@ -91,6 +91,37 @@ question are sent to OpenAI; no filesystem paths, vectors, unrelated documents,
 or credentials are sent. There is no general-knowledge answering, chat memory,
 or multi-turn state. Tests use fake providers and remain offline.
 
+## Local demo interface
+
+The optional Flask interface presents the same grounded workflow for a local
+demo: add documents, prepare a temporary in-memory knowledge workspace, ask a
+question, and inspect validated source cards. Start it after installing project
+dependencies with:
+
+```bash
+.venv/bin/python -m ai_knowledge_assistant.web
+```
+
+It listens on `127.0.0.1:5000` by default. For an explicitly controlled local
+Codespaces preview, use
+`AI_KNOWLEDGE_ASSISTANT_HOST=0.0.0.0 .venv/bin/python -m ai_knowledge_assistant.web`;
+do not expose it publicly without production security work.
+
+Choose **Use Harbor & Hearth Demo** to process the six committed synthetic
+documents through the same secure upload, extraction, chunking, and indexing
+pipeline used for client uploads. Client uploads accept PDF, DOCX, TXT, and
+Markdown files up to 10 MiB each. The browser session stores only an opaque run
+identifier; documents and process-local indexes remain in a temporary workspace
+and **Reset workspace** removes that run. When OpenAI providers are configured,
+document chunks and questions cross the existing OpenAI processing boundary;
+templates and browser JavaScript never receive API keys, paths, vectors, or raw
+provider failures.
+
+### Screenshots
+
+Screenshot placeholders for the landing screen, demo-ready workspace, supported
+answer, and unsupported-answer state will be added after a local visual review.
+
 ## Deliberate V1 boundary
 
 V1 is not:
@@ -121,6 +152,7 @@ See [scope documentation](docs/scope.md), [privacy and data handling](docs/priva
 ## Current status
 
 This foundation contains repository safety rules, deterministic document intake,
-extraction, chunking, local retrieval, an optional OpenAI embedding provider,
-documentation, synthetic demo documents, package metadata, and tests. It does
-not include web routes or answer/chat behavior.
+extraction, chunking, local retrieval, grounded answer generation, an optional
+Flask local/demo interface, optional OpenAI providers, documentation, synthetic
+demo documents, package metadata, and tests. It does not include persistent chat
+or production SaaS behavior.

@@ -9,6 +9,7 @@ description = "Grounded business knowledge assistant reference implementation"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "Flask>=3.0",
     "numpy>=1.26",
     "openai>=1.0",
     "pypdf>=5.0",

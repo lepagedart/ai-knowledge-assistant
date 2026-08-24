@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AI Knowledge Assistant | Raise the Bar Consulting</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='app.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='brand-lockup.css') }}">
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="sidebar-top">
+          <a class="brand" href="{{ url_for('landing') }}">
+            <svg class="brand-mark" viewBox="0 0 72 72" aria-hidden="true" focusable="false">
+              <path d="M12 14h48L39 37v15m-6 0V37L12 14Z" />
+              <path d="M25 58h22" />
+              <path d="M27 31v-7m9 7V19m9 12V15" />
+            </svg>
+            <span class="brand-copy"><strong>RAISE THE BAR</strong><span>CONSULTING</span></span>
+          </a>
+          <p class="product">AI Knowledge Assistant</p>
+          <span class="status-pill {{ 'ready' if run and run.index else '' }}">{{ 'Ready' if run and run.index else 'New workspace' }}</span>
+        </div>
+        <button class="menu-toggle" type="button" aria-expanded="false" aria-controls="workspace-navigation">
+          <span class="menu-toggle-label">Workspace menu</span><span class="menu-toggle-icon" aria-hidden="true"></span>
+        </button>
+        <nav id="workspace-navigation" aria-label="Workspace navigation"><a href="#documents">Documents</a><a href="#ask">Ask</a><a href="#sources">Sources</a></nav>
+        <div class="sidebar-bottom">
+          {% if run %}<form action="{{ url_for('reset_workspace') }}" method="post"><button class="text-button" type="submit">Reset workspace</button></form>{% endif %}
+          <p class="privacy-note">Your workspace is private to this browser session.</p>
+        </div>
+      </aside>
+      <main>
+        {% with messages = get_flashed_messages(with_categories=true) %}{% for category, message in messages %}<div class="notice {{ category }}" role="status">{{ message }}</div>{% endfor %}{% endwith %}
+        {% if not run %}
+        <section class="hero"><p class="eyebrow">Grounded business knowledge</p><h1>Turn your business documents into a grounded AI knowledge assistant.</h1><p>Answers are based only on your supplied documents and always include source references.</p>
+          <div class="actions"><form action="{{ url_for('load_demo') }}" method="post"><button type="submit">Use Harbor &amp; Hearth Demo</button></form><a class="button secondary" href="#upload">Upload Documents</a></div>
+          <p class="helper">Synthetic Demo Content · PDF, DOCX, TXT, Markdown · 10 MiB per file</p>
+        </section>
+        {% endif %}
+        <section id="documents" class="panel"><p class="eyebrow">Step 1</p><h2>Documents</h2>
+          <form id="upload" action="{{ url_for('upload_documents') }}" method="post" enctype="multipart/form-data"><label for="documents">Add business documents</label><input id="documents" name="documents" type="file" multiple accept=".pdf,.docx,.txt,.md" required><p class="helper">PDF, DOCX, TXT, or Markdown. Maximum 10 MiB per file.</p><button type="submit">Upload and prepare</button></form>
+          {% if run %}<div class="ready-summary"><strong>{{ run.documents|length }} documents</strong><span>{{ run.chunk_count }} searchable chunks</span><span class="status-pill ready">Indexed / ready</span></div><ul class="document-list">{% for document in run.documents %}<li><span>{{ document_display_title(document.original_display_name) }}</span><small>{{ document.document_type.value|upper }} · Ready</small></li>{% endfor %}</ul>{% endif %}
+        </section>
+        {% if run and run.index %}
+        <section id="ask" class="panel ask-panel"><p class="eyebrow">Step 2</p><h2>Ask your documents</h2><form action="{{ url_for('ask') }}" method="post"><label for="question">Your question</label><div class="question-row"><input id="question" name="question" required placeholder="Ask a question about your documents…" value="{{ question or '' }}"><button type="submit">Ask</button></div></form>{% if examples %}<div class="chips">{% for item in examples %}<button class="chip" type="button" data-question="{{ item }}">{{ item }}</button>{% endfor %}</div>{% endif %}</section>
+        {% endif %}
+        {% if answer %}
+        <section id="answer" class="answer-panel {{ answer.status }}"><p class="eyebrow">Step 3</p><div class="answer-heading"><h2>{{ 'Based on your documents' if answer.status == 'supported' else 'No supported answer found' }}</h2><span class="status-pill {{ 'ready' if answer.status == 'supported' else '' }}">{{ answer.status|capitalize }}</span></div><p class="answer-text">{{ answer.text }}</p>
+          {% if answer.citations %}<section id="sources"><h3>Sources <small>{{ answer.citations|length }}</small></h3><div class="citation-grid">{% for citation in answer.citations %}<article class="citation"><p class="source-number">Source {{ citation.rank }}</p><h4>{{ citation.display_title }}</h4><p class="locator">{{ citation.locator }}</p><blockquote>{{ citation.excerpt }}</blockquote></article>{% endfor %}</div></section>{% endif %}
+        </section>{% endif %}
+      </main>
+    </div><script src="{{ url_for('static', filename='app.js') }}"></script>
+  </body>
+</html>
