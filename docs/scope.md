@@ -15,7 +15,9 @@ staff questions without presenting unsupported information as fact.
 
 - One business knowledge base and one assistant experience.
 - Deterministic document ingestion, text extraction, chunking, and local
-  in-memory vector retrieval through an injectable embedding-provider contract.
+  in-memory vector retrieval through an injectable embedding-provider contract;
+  optional OpenAI embeddings send chunk text and questions to OpenAI while
+  similarity ranking remains local.
 - Citation-ready source locations for extracted sections, such as PDF pages and
   document headings.
 - Answers grounded only in supplied materials, with visible source references.
@@ -25,8 +27,9 @@ staff questions without presenting unsupported information as fact.
 Retrieval returns ranked citation-ready candidate evidence only. Its cosine
 similarity scores are not factual confidence and do not generate answers; a
 future grounded answer layer must validate support against retrieved chunk IDs.
-V1 has no live AI/API calls, hosted vector service, database, or persistent
-client index.
+V1 has no answer-generation AI, hosted vector service, database, or persistent
+client index. OpenAI embedding requests occur only when the optional provider is
+explicitly configured and called; automated tests remain fully offline.
 
 ## Expanded scope, quoted separately
 

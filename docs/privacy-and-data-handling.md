@@ -33,12 +33,18 @@ API keys are supplied through environment variables or a deployment secret
 manager, never browser code, source files, fixtures, logs, or commits.
 `.env.example` is deliberately keyless; local `.env` files are ignored.
 
-No live embedding or answer provider is implemented yet, and test embeddings are
-deterministic local mappings with network access blocked by the test suite. When
-an OpenAI-backed answer and embedding layer is intentionally added later,
-relevant uploaded text and user questions may be sent to OpenAI for processing.
-Clients should review the applicable OpenAI service and data-handling terms
-before using the implementation with non-demo information.
+`OpenAIEmbeddingProvider` is optional and only uses the OpenAI embeddings API.
+When selected by server-side application wiring, exact document chunk text is
+sent to the configured OpenAI embedding model during indexing and a question is
+sent for each retrieval query. The embedding vectors are ranked locally in memory
+and are not persisted. There is no answer-generation AI, chat/completions API,
+hosted vector database, or automatic live demo-corpus embedding.
+
+Tests use injected fake OpenAI clients and a suite-wide network block, so
+automated tests never access OpenAI. Provider construction and configuration
+validation make no API call. Clients should review the applicable OpenAI service
+and data-handling terms before sending non-demo information across this external-
+processing boundary.
 
 ## Retention and deletion expectations
 
