@@ -172,6 +172,61 @@ class RetrievalResult:
         return bool(self.sources)
 
 
+class GroundedAnswerStatus(StrEnum):
+    """Whether an answer passed V1's local grounding checks."""
+
+    SUPPORTED = "supported"
+    UNSUPPORTED = "unsupported"
+
+
+class UnsupportedReasonCode(StrEnum):
+    """Safe reasons exposed when an answer cannot be presented as grounded."""
+
+    NO_QUALIFYING_SOURCES = "NO_QUALIFYING_SOURCES"
+    PROVIDER_INVALID = "PROVIDER_INVALID"
+    PROVIDER_ERROR = "PROVIDER_ERROR"
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderCitation:
+    """Untrusted structured citation proposed by an answer provider."""
+
+    chunk_id: object
+    claim: object
+
+
+@dataclass(frozen=True, slots=True)
+class ProviderAnswer:
+    """Untrusted structured answer returned by an injected provider."""
+
+    status: object
+    answer: object
+    citations: object
+
+
+@dataclass(frozen=True, slots=True)
+class GroundedCitation:
+    """Validated display citation derived exclusively from a retrieved source."""
+
+    chunk_id: str
+    claim: str
+    document_name: str
+    source_locator: SourceLocator
+    source_excerpt: str
+    rank: int
+
+
+@dataclass(frozen=True, slots=True)
+class GroundedAnswer:
+    """Safe answer state returned after deterministic local citation validation."""
+
+    status: GroundedAnswerStatus
+    answer: str
+    citations: tuple[GroundedCitation, ...]
+    source_ids_used: tuple[str, ...]
+    unsupported_reason_code: UnsupportedReasonCode | None = None
+
+
 class ExtractionErrorCode(StrEnum):
     """Stable errors produced by the deterministic extraction boundary."""
 

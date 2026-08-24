@@ -31,6 +31,14 @@ V1 has no answer-generation AI, hosted vector service, database, or persistent
 client index. OpenAI embedding requests occur only when the optional provider is
 explicitly configured and called; automated tests remain fully offline.
 
+## Grounded answer behavior
+
+The answer layer receives only selected retrieved evidence through an injected
+provider, then validates structured chunk-ID citations locally. Missing evidence
+or invalid output produces an explicit no-support state. It does not use general
+knowledge, and citation traceability does not guarantee perfect semantic
+entailment. V1 has no chat memory or multi-turn state; tests remain offline.
+
 ## Expanded scope, quoted separately
 
 Examples include large archives or bulk migration, scanned-document OCR,
