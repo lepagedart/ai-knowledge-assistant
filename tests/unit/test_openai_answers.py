@@ -62,7 +62,20 @@ def test_construction_is_protocol_compatible_and_makes_no_request() -> None:
     provider: AnswerProvider = OpenAIAnswerProvider(client=client)
 
     assert provider.generate_answer
+    assert DEFAULT_OPENAI_ANSWER_MODEL == "gpt-5.6-luna"
     assert provider.model == DEFAULT_OPENAI_ANSWER_MODEL
+    assert client.responses.calls == []
+
+
+def test_environment_model_override_is_local_and_makes_no_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_ANSWER_MODEL", "configured-answer-model")
+    client = FakeClient(FakeResponse("{}"))
+
+    provider = OpenAIAnswerProvider(client=client)
+
+    assert provider.model == "configured-answer-model"
     assert client.responses.calls == []
 
 
