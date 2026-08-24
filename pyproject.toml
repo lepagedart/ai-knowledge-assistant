@@ -9,6 +9,7 @@ description = "Grounded business knowledge assistant reference implementation"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "numpy>=1.26",
     "pypdf>=5.0",
     "python-docx>=1.1",
 ]
