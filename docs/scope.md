@@ -43,8 +43,10 @@ entailment. V1 has no chat memory or multi-turn state; tests remain offline.
 
 The included Flask interface is a single-process local/demo presentation layer,
 not a production multi-user application. It uses one temporary workspace per
-browser session, a process-local index, explicit reset cleanup, and the existing
-secure ingestion/retrieval/answer boundaries. It has no authentication, database,
+browser session, a process-local index, server-side question/answer presentation
+state, explicit reset cleanup, and the existing secure ingestion/retrieval/answer
+boundaries. Its browser cookie holds only the opaque workspace identifier, apart
+from normal transient Flask framework state. It has no authentication, database,
 persistent files, persistent conversations, or hosted UI deployment.
 
 Its presentation uses a local-first typography system: a restrained classic

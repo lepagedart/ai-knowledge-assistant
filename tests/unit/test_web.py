@@ -159,6 +159,37 @@ def test_supported_answer_renders_only_validated_citation_data(tmp_path: Path) -
     assert b"chunk_id" not in response.data
 
 
+def test_answer_presentation_state_stays_server_side_and_is_session_isolated(
+    tmp_path: Path,
+) -> None:
+    app = _app(tmp_path)
+    first = app.test_client()
+    second = app.test_client()
+    question = "When should I call out?"
+
+    _upload(first, "policy.md", b"# Attendance\nCall out two hours before a shift.")
+    response = first.post("/ask", data={"question": question}, follow_redirects=True)
+
+    with first.session_transaction() as browser_session:
+        session_data = dict(browser_session)
+
+    assert b"Grounded operating guidance." in response.data
+    assert question.encode() in response.data
+    assert session_data.keys() == {"run_id"}
+    assert isinstance(session_data["run_id"], str)
+    assert "answer" not in session_data
+    assert "question" not in session_data
+    assert "Call out two hours before a shift." not in str(session_data)
+    assert b"Grounded operating guidance." not in second.get("/").data
+
+    run = next(iter(app.extensions["knowledge_runs"].values()))
+    assert run.question == question
+    assert run.answer_view is not None
+    assert run.answer_view["citations"][0]["excerpt"] == (
+        "Attendance\nCall out two hours before a shift."
+    )
+
+
 def test_harbor_document_and_citation_titles_are_human_readable(tmp_path: Path) -> None:
     client = _app(tmp_path).test_client()
     _upload(

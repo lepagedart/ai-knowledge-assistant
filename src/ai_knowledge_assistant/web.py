@@ -43,6 +43,8 @@ class KnowledgeRun:
     index: LocalVectorIndex | None = None
     chunk_count: int = 0
     is_demo: bool = False
+    question: str | None = None
+    answer_view: dict[str, Any] | None = None
 
 
 def create_app(config: dict[str, Any] | None = None) -> Flask:
@@ -118,8 +120,8 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
             embedding_provider, answer_provider = _providers(app)
             result = retrieve(run.index, question, embedding_provider)
             answer = generate_grounded_answer(question, result.sources, answer_provider)
-            session["answer"] = _answer_view(answer)
-            session["question"] = result.question
+            run.question = result.question
+            run.answer_view = _answer_view(answer)
         except Exception:
             flash(
                 "The question could not be answered. Check local provider setup.",
@@ -146,8 +148,8 @@ def _render(app: Flask) -> str:
     return render_template(
         "index.html",
         run=run,
-        answer=session.get("answer"),
-        question=session.get("question"),
+        answer=run.answer_view if run else None,
+        question=run.question if run else None,
         examples=_examples() if run and run.is_demo else (),
         document_display_title=document_display_title,
     )
@@ -168,6 +170,8 @@ def _reset_run(app: Flask) -> KnowledgeRun:
     run = KnowledgeRun(workspace=workspace)
     app.extensions["knowledge_runs"][workspace.run_id] = run
     session["run_id"] = workspace.run_id
+    # Clear only legacy presentation values that an older browser cookie could
+    # contain; all current presentation state belongs to the server-side run.
     session.pop("answer", None)
     session.pop("question", None)
     return run

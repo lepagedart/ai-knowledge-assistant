@@ -110,10 +110,10 @@ do not expose it publicly without production security work.
 Choose **Use Harbor & Hearth Demo** to process the six committed synthetic
 documents through the same secure upload, extraction, chunking, and indexing
 pipeline used for client uploads. Client uploads accept PDF, DOCX, TXT, and
-Markdown files up to 10 MiB each. The browser session stores only an opaque run
-identifier; documents and process-local indexes remain in a temporary workspace
-and **Reset workspace** removes that run. When OpenAI providers are configured,
-document chunks and questions cross the existing OpenAI processing boundary;
+Markdown files up to 10 MiB each. The browser cookie stores only an opaque run
+identifier; documents, process-local indexes, and question/answer presentation
+state remain in a temporary server-side workspace and **Reset workspace**
+removes that run. When OpenAI providers are configured, document chunks and questions cross the existing OpenAI processing boundary;
 templates and browser JavaScript never receive API keys, paths, vectors, or raw
 provider failures.
 
