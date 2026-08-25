@@ -1,0 +1,20 @@
+services:
+  - type: web
+    name: ai-knowledge-assistant
+    runtime: python
+    buildCommand: pip install .
+    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 1 --threads 1 ai_knowledge_assistant.wsgi:app
+    healthCheckPath: /health
+    envVars:
+      - key: AI_KNOWLEDGE_ASSISTANT_ENV
+        value: production
+      - key: PYTHON_VERSION
+        value: "3.12.1"
+      - key: ALLOW_CLIENT_UPLOADS
+        value: "false"
+      - key: KNOWLEDGE_RUN_TTL_SECONDS
+        value: "3600"
+      - key: FLASK_SECRET_KEY
+        generateValue: true
+      - key: OPENAI_API_KEY
+        sync: false

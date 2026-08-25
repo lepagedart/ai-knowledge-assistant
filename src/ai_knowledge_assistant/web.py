@@ -4,11 +4,25 @@ from __future__ import annotations
 
 import os
 import secrets
+import threading
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from flask import Flask, flash, redirect, render_template, request, session, url_for
+from flask import (
+    Flask,
+    abort,
+    current_app,
+    flash,
+    jsonify,
+    redirect,
+    render_template,
+    request,
+    session,
+    url_for,
+)
+from werkzeug.exceptions import RequestEntityTooLarge
 
 from .answer_generation import generate_grounded_answer
 from .chunking import chunk_document
@@ -19,6 +33,7 @@ from .models import (
     GroundedAnswer,
     ReconciliationIssueCode,
     ReconciliationStatus,
+    UploadErrorCode,
 )
 from .openai_answers import OpenAIAnswerProvider
 from .openai_embeddings import OpenAIEmbeddingProvider
@@ -31,7 +46,13 @@ from .workspace import UploadWorkspace
 DEMO_DIRECTORY = (
     Path(__file__).resolve().parents[2] / "demo_documents" / "harbor_and_hearth"
 )
-MAX_REQUEST_BYTES = 10 * 1024 * 1024 * 8
+DEFAULT_MAX_FILE_BYTES = 10 * 1024 * 1024
+DEFAULT_MAX_DOCUMENTS_PER_RUN = 12
+DEFAULT_MAX_TOTAL_UPLOAD_BYTES = 50 * 1024 * 1024
+DEFAULT_MAX_CHUNKS_PER_RUN = 2_000
+DEFAULT_MAX_QUESTION_LENGTH = 2_000
+DEFAULT_MAX_ACTIVE_RUNS = 25
+DEFAULT_KNOWLEDGE_RUN_TTL_SECONDS = 60 * 60
 _DEMO_DISPLAY_TITLES = {
     "callout_attendance_policy.md": "Call-Out & Attendance Policy",
     "employee_handbook.md": "Employee Handbook",
@@ -67,21 +88,99 @@ class KnowledgeRun:
     question: str | None = None
     answer_view: dict[str, Any] | None = None
     reconciliation: Any | None = None
+    created_at: float = 0.0
+    last_accessed_at: float = 0.0
 
 
 def create_app(config: dict[str, Any] | None = None) -> Flask:
-    """Create a testable, state-minimal local Flask application."""
+    """Create a testable single-process temporary-workspace application."""
+    environment = os.environ.get("AI_KNOWLEDGE_ASSISTANT_ENV", "development")
+    if environment not in {"development", "production"}:
+        raise RuntimeError("Invalid AI_KNOWLEDGE_ASSISTANT_ENV configuration.")
     app = Flask(__name__)
     app.config.from_mapping(
-        SECRET_KEY=os.environ.get("FLASK_SECRET_KEY") or secrets.token_urlsafe(32),
-        MAX_CONTENT_LENGTH=MAX_REQUEST_BYTES,
-        WORKSPACE_ROOT=None,
+        AI_KNOWLEDGE_ASSISTANT_ENV=environment,
+        SECRET_KEY=os.environ.get("FLASK_SECRET_KEY"),
+        MAX_CONTENT_LENGTH=_env_positive_int(
+            "MAX_REQUEST_BYTES", DEFAULT_MAX_TOTAL_UPLOAD_BYTES + 1024 * 1024
+        ),
+        WORKSPACE_ROOT=(
+            Path(os.environ["WORKSPACE_ROOT"])
+            if os.environ.get("WORKSPACE_ROOT")
+            else None
+        ),
+        OPENAI_API_KEY=os.environ.get("OPENAI_API_KEY"),
+        OPENAI_EMBEDDING_MODEL=os.environ.get("OPENAI_EMBEDDING_MODEL"),
+        OPENAI_ANSWER_MODEL=os.environ.get("OPENAI_ANSWER_MODEL"),
+        ALLOW_CLIENT_UPLOADS=_env_bool("ALLOW_CLIENT_UPLOADS", True),
+        KNOWLEDGE_RUN_TTL_SECONDS=_env_positive_int(
+            "KNOWLEDGE_RUN_TTL_SECONDS", DEFAULT_KNOWLEDGE_RUN_TTL_SECONDS
+        ),
+        MAX_FILE_BYTES=_env_positive_int("MAX_FILE_BYTES", DEFAULT_MAX_FILE_BYTES),
+        MAX_DOCUMENTS_PER_RUN=_env_positive_int(
+            "MAX_DOCUMENTS_PER_RUN", DEFAULT_MAX_DOCUMENTS_PER_RUN
+        ),
+        MAX_TOTAL_UPLOAD_BYTES=_env_positive_int(
+            "MAX_TOTAL_UPLOAD_BYTES", DEFAULT_MAX_TOTAL_UPLOAD_BYTES
+        ),
+        MAX_CHUNKS_PER_RUN=_env_positive_int(
+            "MAX_CHUNKS_PER_RUN", DEFAULT_MAX_CHUNKS_PER_RUN
+        ),
+        MAX_QUESTION_LENGTH=_env_positive_int(
+            "MAX_QUESTION_LENGTH", DEFAULT_MAX_QUESTION_LENGTH
+        ),
+        MAX_ACTIVE_RUNS=_env_positive_int(
+            "MAX_ACTIVE_RUNS", DEFAULT_MAX_ACTIVE_RUNS
+        ),
+        TIME_PROVIDER=time.monotonic,
+        CSRF_PROTECTION=True,
         EMBEDDING_PROVIDER=None,
         ANSWER_PROVIDER=None,
     )
     if config:
         app.config.update(config)
+    if app.config.get("TESTING") and "CSRF_PROTECTION" not in (config or {}):
+        app.config["CSRF_PROTECTION"] = False
+    if (
+        not app.config["SECRET_KEY"]
+        and app.config["AI_KNOWLEDGE_ASSISTANT_ENV"] == "development"
+    ):
+        app.config["SECRET_KEY"] = secrets.token_urlsafe(32)
+    _validate_configuration(app)
+    production = app.config["AI_KNOWLEDGE_ASSISTANT_ENV"] == "production"
+    app.config.update(
+        DEBUG=False,
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_COOKIE_SECURE=production,
+    )
     app.extensions["knowledge_runs"] = {}
+    app.extensions["knowledge_runs_lock"] = threading.RLock()
+
+    @app.errorhandler(RequestEntityTooLarge)
+    def request_too_large(_: RequestEntityTooLarge) -> Any:
+        if request.path == "/health":
+            return jsonify(status="ok")
+        flash("The upload request is too large. Use a smaller upload set.", "error")
+        return redirect(url_for("landing"))
+
+    @app.before_request
+    def maintain_runs_and_verify_csrf() -> None:
+        # Health probes must not traverse or clean a temporary workspace.
+        if request.path == "/health":
+            return
+        _prune_expired_runs(app)
+        if request.method == "POST" and app.config["CSRF_PROTECTION"]:
+            token = request.form.get("csrf_token")
+            if not isinstance(token, str) or not secrets.compare_digest(
+                token, _csrf_token()
+            ):
+                abort(400)
+        _touch_current_run(app)
+
+    @app.get("/health")
+    def health() -> Any:
+        return jsonify(status="ok")
 
     @app.get("/")
     def landing() -> str:
@@ -89,7 +188,14 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
 
     @app.post("/demo")
     def load_demo() -> Any:
-        run = _reset_run(app)
+        try:
+            run = _reset_run(app)
+        except RuntimeError:
+            flash(
+                "Temporary workspace capacity reached. Please try again shortly.",
+                "error",
+            )
+            return redirect(url_for("landing"))
         try:
             for path in sorted(DEMO_DIRECTORY.iterdir()):
                 if not path.is_file():
@@ -109,17 +215,39 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
 
     @app.post("/upload")
     def upload_documents() -> Any:
+        if not app.config["ALLOW_CLIENT_UPLOADS"]:
+            flash("Client uploads are disabled for this demo.", "error")
+            return redirect(url_for("landing"))
         files = tuple(
             file for file in request.files.getlist("documents") if file.filename
         )
         if not files:
             flash("Choose at least one document to upload.", "error")
             return redirect(url_for("landing"))
-        run = _reset_run(app)
+        if len(files) > app.config["MAX_DOCUMENTS_PER_RUN"]:
+            flash("Too many documents. Use a smaller upload set.", "error")
+            return redirect(url_for("landing"))
+        total_bytes = sum(_uploaded_file_size(file) for file in files)
+        if total_bytes > app.config["MAX_TOTAL_UPLOAD_BYTES"]:
+            flash("The total upload is too large. Use a smaller upload set.", "error")
+            return redirect(url_for("landing"))
+        try:
+            run = _reset_run(app)
+        except RuntimeError:
+            flash(
+                "Temporary workspace capacity reached. Please try again shortly.",
+                "error",
+            )
+            return redirect(url_for("landing"))
         try:
             for file in files:
                 run.documents.append(
-                    accept_upload(run.workspace, file.filename, file.read())
+                    accept_upload(
+                        run.workspace,
+                        file.filename,
+                        file.read(),
+                        max_file_size_bytes=app.config["MAX_FILE_BYTES"],
+                    )
                 )
             _index_run(app, run)
             flash("Documents are indexed and ready for grounded questions.", "success")
@@ -136,6 +264,12 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
     @app.post("/ask")
     def ask() -> Any:
         question = request.form.get("question", "")
+        if len(question) > app.config["MAX_QUESTION_LENGTH"]:
+            flash(
+                "Questions must be shorter. Please ask a more concise question.",
+                "error",
+            )
+            return redirect(url_for("landing"))
         run = _current_run(app)
         if run is None or run.index is None:
             flash("Add and prepare documents before asking a question.", "error")
@@ -179,6 +313,8 @@ def _render(app: Flask) -> str:
         if run and run.reconciliation
         else None,
         document_display_title=document_display_title,
+        csrf_token=_csrf_token(),
+        allow_client_uploads=app.config["ALLOW_CLIENT_UPLOADS"],
     )
 
 
@@ -186,16 +322,22 @@ def _current_run(app: Flask) -> KnowledgeRun | None:
     run_id = session.get("run_id")
     if not isinstance(run_id, str):
         return None
-    return app.extensions["knowledge_runs"].get(run_id)
+    with app.extensions["knowledge_runs_lock"]:
+        return app.extensions["knowledge_runs"].get(run_id)
 
 
 def _reset_run(app: Flask) -> KnowledgeRun:
     current = _current_run(app)
     if current is not None:
         _discard_run(app, current)
-    workspace = UploadWorkspace.create(app.config["WORKSPACE_ROOT"])
-    run = KnowledgeRun(workspace=workspace)
-    app.extensions["knowledge_runs"][workspace.run_id] = run
+    with app.extensions["knowledge_runs_lock"]:
+        runs = app.extensions["knowledge_runs"]
+        if len(runs) >= app.config["MAX_ACTIVE_RUNS"]:
+            raise RuntimeError("Temporary workspace capacity reached.")
+        workspace = UploadWorkspace.create(app.config["WORKSPACE_ROOT"])
+        now = app.config["TIME_PROVIDER"]()
+        run = KnowledgeRun(workspace=workspace, created_at=now, last_accessed_at=now)
+        runs[workspace.run_id] = run
     session["run_id"] = workspace.run_id
     # Clear only legacy presentation values that an older browser cookie could
     # contain; all current presentation state belongs to the server-side run.
@@ -205,7 +347,8 @@ def _reset_run(app: Flask) -> KnowledgeRun:
 
 
 def _discard_run(app: Flask, run: KnowledgeRun) -> None:
-    app.extensions["knowledge_runs"].pop(run.workspace.run_id, None)
+    with app.extensions["knowledge_runs_lock"]:
+        app.extensions["knowledge_runs"].pop(run.workspace.run_id, None)
     try:
         run.workspace.cleanup()
     except Exception:
@@ -213,8 +356,13 @@ def _discard_run(app: Flask, run: KnowledgeRun) -> None:
 
 
 def _providers(app: Flask) -> tuple[EmbeddingProvider, Any]:
-    embedding = app.config["EMBEDDING_PROVIDER"] or OpenAIEmbeddingProvider()
-    answer = app.config["ANSWER_PROVIDER"] or OpenAIAnswerProvider()
+    embedding = app.config["EMBEDDING_PROVIDER"] or OpenAIEmbeddingProvider(
+        api_key=app.config["OPENAI_API_KEY"],
+        model=app.config["OPENAI_EMBEDDING_MODEL"],
+    )
+    answer = app.config["ANSWER_PROVIDER"] or OpenAIAnswerProvider(
+        api_key=app.config["OPENAI_API_KEY"], model=app.config["OPENAI_ANSWER_MODEL"]
+    )
     return embedding, answer
 
 
@@ -251,6 +399,11 @@ def _index_run(app: Flask, run: KnowledgeRun) -> None:
     chunks = tuple(
         chunk for document in extracted for chunk in chunk_document(document)
     )
+    if len(chunks) > app.config["MAX_CHUNKS_PER_RUN"]:
+        raise UploadValidationError(
+            UploadErrorCode.STRUCTURED_LIMIT_EXCEEDED,
+            "Documents create too much content. Use a smaller upload set.",
+        )
     run.index = build_index(chunks, embedding_provider)
     run.chunk_count = len(chunks)
 
@@ -464,9 +617,94 @@ def _exception_label(line: Any) -> str:
     return " · ".join(dict.fromkeys(labels)) or "Needs review"
 
 
+def _env_bool(name: str, default: bool) -> bool:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    if value.lower() in {"1", "true", "yes"}:
+        return True
+    if value.lower() in {"0", "false", "no"}:
+        return False
+    raise RuntimeError(f"Invalid {name} configuration.")
+
+
+def _env_positive_int(name: str, default: int) -> int:
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    try:
+        parsed = int(value)
+    except ValueError:
+        raise RuntimeError(f"Invalid {name} configuration.") from None
+    if parsed <= 0:
+        raise RuntimeError(f"Invalid {name} configuration.")
+    return parsed
+
+
+def _validate_configuration(app: Flask) -> None:
+    if app.config["AI_KNOWLEDGE_ASSISTANT_ENV"] not in {"development", "production"}:
+        raise RuntimeError("Invalid AI_KNOWLEDGE_ASSISTANT_ENV configuration.")
+    if app.config["AI_KNOWLEDGE_ASSISTANT_ENV"] == "production" and not os.environ.get(
+        "FLASK_SECRET_KEY"
+    ) and not app.config.get("SECRET_KEY"):
+        raise RuntimeError("Production requires FLASK_SECRET_KEY configuration.")
+    for key in (
+        "MAX_CONTENT_LENGTH",
+        "KNOWLEDGE_RUN_TTL_SECONDS",
+        "MAX_FILE_BYTES",
+        "MAX_DOCUMENTS_PER_RUN",
+        "MAX_TOTAL_UPLOAD_BYTES",
+        "MAX_CHUNKS_PER_RUN",
+        "MAX_QUESTION_LENGTH",
+        "MAX_ACTIVE_RUNS",
+    ):
+        if not isinstance(app.config[key], int) or app.config[key] <= 0:
+            raise RuntimeError(f"Invalid {key} configuration.")
+    if app.config["MAX_CONTENT_LENGTH"] < app.config["MAX_TOTAL_UPLOAD_BYTES"]:
+        raise RuntimeError("MAX_REQUEST_BYTES must allow the total upload limit.")
+
+
+def _csrf_token() -> str:
+    if not current_app.config["CSRF_PROTECTION"]:
+        return ""
+    token = session.get("csrf_token")
+    if not isinstance(token, str):
+        token = secrets.token_urlsafe(32)
+        session["csrf_token"] = token
+    return token
+
+
+def _uploaded_file_size(file: Any) -> int:
+    stream = file.stream
+    position = stream.tell()
+    stream.seek(0, 2)
+    size = stream.tell()
+    stream.seek(position)
+    return size
+
+
+def _touch_current_run(app: Flask) -> None:
+    run = _current_run(app)
+    if run is not None:
+        with app.extensions["knowledge_runs_lock"]:
+            if app.extensions["knowledge_runs"].get(run.workspace.run_id) is run:
+                run.last_accessed_at = app.config["TIME_PROVIDER"]()
+
+
+def _prune_expired_runs(app: Flask) -> None:
+    now = app.config["TIME_PROVIDER"]()
+    with app.extensions["knowledge_runs_lock"]:
+        expired = tuple(
+            run for run in app.extensions["knowledge_runs"].values()
+            if now - run.last_accessed_at >= app.config["KNOWLEDGE_RUN_TTL_SECONDS"]
+        )
+    for run in expired:
+        _discard_run(app, run)
+
+
 if __name__ == "__main__":  # pragma: no cover
     create_app().run(
         host=os.environ.get("AI_KNOWLEDGE_ASSISTANT_HOST", "127.0.0.1"),
-        port=5000,
+        port=int(os.environ.get("PORT", "5000")),
         debug=False,
     )
