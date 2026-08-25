@@ -17,6 +17,11 @@ invoice line in stable source order. Invoice source line totals remain distinct
 from locally derived quantity × unit-price totals. No accounting, approvals,
 recommendations, OCR, or integrations are included.
 
+The reconciliation UI is exception-first: clean matches are hidden initially to
+keep attention on lines that need review, but remain available through an
+explicit disclosure for auditability. The deterministic engine still evaluates
+every eligible line.
+
 A small, grounded business knowledge assistant reference implementation for the
 **Custom AI Knowledge Assistant — starting at $550** service. It demonstrates a
 simple workflow: a business provides internal reference materials, the

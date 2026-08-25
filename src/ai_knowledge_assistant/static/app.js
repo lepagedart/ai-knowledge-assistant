@@ -29,3 +29,21 @@ if (menuToggle && workspaceNavigation) {
     if (event.key === "Escape") closeMenu();
   });
 }
+
+const reconciliationDisclosure = document.querySelector(".reconciliation-disclosure");
+const reconciliationLinesId = reconciliationDisclosure?.getAttribute("aria-controls");
+const matchedReconciliationLines = reconciliationLinesId
+  ? document.getElementById(reconciliationLinesId)
+  : null;
+
+if (reconciliationDisclosure && matchedReconciliationLines) {
+  reconciliationDisclosure.addEventListener("click", () => {
+    const expanded = matchedReconciliationLines.hidden;
+    matchedReconciliationLines.hidden = !expanded;
+    reconciliationDisclosure.setAttribute("aria-expanded", String(expanded));
+    reconciliationDisclosure.textContent = reconciliationDisclosure.textContent.replace(
+      expanded ? "Show" : "Hide",
+      expanded ? "Hide" : "Show",
+    );
+  });
+}

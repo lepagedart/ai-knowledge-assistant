@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
 from typing import Sequence
@@ -15,7 +16,16 @@ from ai_knowledge_assistant.models import (
     SourceLocator,
     SourceLocatorKind,
 )
-from ai_knowledge_assistant.web import _answer_view, create_app, document_display_title
+from ai_knowledge_assistant.reconciliation import reconcile
+from ai_knowledge_assistant.structured_records import parse_structured_document
+from ai_knowledge_assistant.uploads import accept_upload
+from ai_knowledge_assistant.web import (
+    _answer_view,
+    _reconciliation_view,
+    create_app,
+    document_display_title,
+)
+from ai_knowledge_assistant.workspace import UploadWorkspace
 
 
 class FakeEmbeddingProvider:
@@ -70,6 +80,30 @@ def _upload(
         content_type="multipart/form-data",
         follow_redirects=True,
     )
+
+
+INVOICE_HEADER = (
+    "Invoice Number,PO Number,Vendor,SKU,Item,Quantity,Unit Price,Line Total,Unit\n"
+)
+PO_HEADER = "PO Number,Vendor,SKU,Item,Quantity,Unit Price,Unit\n"
+
+
+def _reconcile_csvs(tmp_path: Path, invoices: str, purchase_orders: str):
+    workspace = UploadWorkspace.create(tmp_path)
+    invoice = accept_upload(workspace, "invoices.csv", invoices.encode())
+    purchase_order = accept_upload(
+        workspace, "purchase_orders.csv", purchase_orders.encode()
+    )
+    records = tuple(
+        record
+        for document, content in (
+            (invoice, invoices),
+            (purchase_order, purchase_orders),
+        )
+        for sheet in parse_structured_document(document, content.encode()).sheets
+        for record in sheet.records
+    )
+    return reconcile(records)
 
 
 def test_landing_upload_and_demo_workflows_are_safe_and_ready(tmp_path: Path) -> None:
@@ -160,6 +194,252 @@ def test_landing_includes_an_accessible_mobile_workspace_menu(tmp_path: Path) ->
     assert b">Ask<" in response.data
     assert b">Sources<" in response.data
     assert b"Reset workspace" in response.data
+
+
+def test_demo_reconciliation_uses_only_intended_sources_and_counts(
+    tmp_path: Path,
+) -> None:
+    app = _app(tmp_path)
+    response = app.test_client().post("/demo", follow_redirects=True)
+    run = next(iter(app.extensions["knowledge_runs"].values()))
+    summary = run.reconciliation.summary
+
+    assert summary.matched_line_count == 1
+    assert summary.variance_line_count == 2
+    assert summary.missing_on_po_count == 1
+    assert summary.missing_on_invoice_count == 3
+    assert summary.total_monetary_variance == Decimal("21.00")
+    assert summary.matched_line_count == sum(
+        line.status.value == "MATCHED" for line in run.reconciliation.lines
+    )
+    assert summary.variance_line_count == sum(
+        line.status.value == "VARIANCE" for line in run.reconciliation.lines
+    )
+    assert summary.missing_on_po_count == sum(
+        line.status.value == "MISSING_ON_PO" for line in run.reconciliation.lines
+    )
+    assert summary.missing_on_invoice_count == sum(
+        line.status.value == "MISSING_ON_INVOICE" for line in run.reconciliation.lines
+    )
+    assert all(
+        not line.purchase_order
+        or line.purchase_order.document_name
+        != "harbor_hearth_purchase_orders.xlsx"
+        for line in run.reconciliation.lines
+    )
+    assert b"Needs attention" in response.data
+    assert b"$21.00" in response.data
+
+
+def test_reconciliation_groups_ambiguity_candidates_and_keeps_full_audit_disclosable(
+    tmp_path: Path,
+) -> None:
+    response = _app(tmp_path).test_client().post("/demo", follow_redirects=True)
+    default_cards, audit_cards = response.data.split(b'id="all-reconciliation-lines"')
+
+    assert b"Price variance" in default_cards
+    assert b"Quantity variance" in default_cards
+    assert b"Not found on purchase order" in default_cards
+    assert b"Ordered but not invoiced" in default_cards
+    assert b"Unit mismatch" in default_cards
+    assert b"Ambiguous match" in default_cards
+    assert b"Tonic Water" not in default_cards
+    assert default_cards.count(b"House Bitters") == 1
+    assert b"2 purchase-order lines could match this invoice line" in default_cards
+    assert b"Ice Cubes" in default_cards
+    assert b"Needs attention</span><strong>6" in default_cards
+    assert b"Show 9 deterministic audit lines" in response.data
+    assert b'aria-expanded="false"' in response.data
+    assert b'aria-controls="all-reconciliation-lines"' in response.data
+    assert (
+        b'<div id="all-reconciliation-lines" class="citation-grid '
+        b'reconciliation-grid matched-lines" hidden>'
+    ) in response.data
+    assert b"Tonic Water" in audit_cards
+    assert b"Matched</p><h4>Tonic Water</h4>" in audit_cards
+    assert b"Needs review</p><h4>Tonic Water</h4>" not in audit_cards
+    assert audit_cards.count(b"House Bitters") == 3
+    assert b"Ambiguity candidate \xe2\x80\x94 ordered but not invoiced" in audit_cards
+
+
+def test_reconciliation_disclosure_honors_hidden_contract() -> None:
+    css = Path("src/ai_knowledge_assistant/static/app.css").read_text()
+    javascript = Path("src/ai_knowledge_assistant/static/app.js").read_text()
+
+    assert "[hidden]{display:none!important}" in css
+    assert 'getAttribute("aria-controls")' in javascript
+    assert "document.getElementById(reconciliationLinesId)" in javascript
+    assert "matchedReconciliationLines.hidden = !expanded" in javascript
+    assert 'setAttribute("aria-expanded", String(expanded))' in javascript
+
+
+def test_all_exception_reconciliation_has_no_matched_engine_lines(
+    tmp_path: Path,
+) -> None:
+    result = _reconcile_csvs(
+        tmp_path,
+        INVOICE_HEADER + "INV-1,PO-1,V,A,Extra,1,1,1,each\n",
+        PO_HEADER + "PO-1,V,B,Absent,1,1,each\n",
+    )
+    view = _reconciliation_view(result)
+
+    assert all(line["status"] != "Matched" for line in view["audit_lines"])
+    assert view["exception_count"] == 2
+
+
+def test_clean_reconciliation_has_a_dynamic_positive_state(tmp_path: Path) -> None:
+    app = _app(tmp_path)
+    client = app.test_client()
+    response = client.post(
+        "/upload",
+        data={
+            "documents": [
+                (
+                    BytesIO(
+                        (INVOICE_HEADER + "INV-1,PO-1,V,A,Item,1,10,10,each\n").encode()
+                    ),
+                    "invoices.csv",
+                ),
+                (
+                    BytesIO((PO_HEADER + "PO-1,V,A,Item,1,10,each\n").encode()),
+                    "purchase_orders.csv",
+                ),
+            ]
+        },
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+
+    assert b"All 1 lines reconciled" in response.data
+    assert b"Show 1 deterministic audit line" in response.data
+    assert b"Needs attention</span><strong>0" in response.data
+
+
+def test_plain_english_exception_labels_are_derived_from_engine_outcomes(
+    tmp_path: Path,
+) -> None:
+    price = _reconciliation_view(
+        _reconcile_csvs(
+            tmp_path / "price",
+            INVOICE_HEADER + "INV-1,PO-1,V,A,Item,1,12,12,each\n",
+            PO_HEADER + "PO-1,V,A,Item,1,10,each\n",
+        )
+    )
+    quantity = _reconciliation_view(
+        _reconcile_csvs(
+            tmp_path / "quantity",
+            INVOICE_HEADER + "INV-1,PO-1,V,A,Item,2,10,20,each\n",
+            PO_HEADER + "PO-1,V,A,Item,1,10,each\n",
+        )
+    )
+    unit = _reconciliation_view(
+        _reconcile_csvs(
+            tmp_path / "unit",
+            INVOICE_HEADER + "INV-1,PO-1,V,A,Item,1,10,10,case\n",
+            PO_HEADER + "PO-1,V,A,Item,1,10,bottle\n",
+        )
+    )
+    ambiguity = _reconciliation_view(
+        _reconcile_csvs(
+            tmp_path / "ambiguity",
+            INVOICE_HEADER + "INV-1,PO-1,V,,Item,1,10,10,each\n",
+            PO_HEADER + "PO-1,V,A,Item,1,10,each\nPO-1,V,B,Item,1,10,each\n",
+        )
+    )
+
+    assert price["exception_lines"][0]["exception_label"] == "Price variance"
+    assert quantity["exception_lines"][0]["exception_label"] == "Quantity variance"
+    assert unit["exception_lines"][0]["exception_label"] == "Unit mismatch"
+    assert ambiguity["exception_lines"][0]["exception_label"] == "Ambiguous match"
+
+
+def test_reconciliation_projection_exposes_deterministic_comparison_details(
+    tmp_path: Path,
+) -> None:
+    quantity = _reconciliation_view(
+        _reconcile_csvs(
+            tmp_path / "quantity-details",
+            INVOICE_HEADER + "INV-1,PO-1,V,A,Item,5,18,90,bag\n",
+            PO_HEADER + "PO-1,V,A,Item,4,18,bag\n",
+        )
+    )["exception_lines"][0]
+    price = _reconciliation_view(
+        _reconcile_csvs(
+            tmp_path / "price-details",
+            INVOICE_HEADER + "INV-1,PO-1,V,A,Item,6,24.50,147,each\n",
+            PO_HEADER + "PO-1,V,A,Item,6,24,each\n",
+        )
+    )["exception_lines"][0]
+    multiple = _reconciliation_view(
+        _reconcile_csvs(
+            tmp_path / "multiple-details",
+            INVOICE_HEADER + "INV-1,PO-1,V,A,Item,2,12,24,each\n",
+            PO_HEADER + "PO-1,V,A,Item,1,10,each\n",
+        )
+    )["exception_lines"][0]
+    unit = _reconciliation_view(
+        _reconcile_csvs(
+            tmp_path / "unit-details",
+            INVOICE_HEADER + "INV-1,PO-1,V,A,Item,1,10,10,case\n",
+            PO_HEADER + "PO-1,V,A,Item,1,10,bottle\n",
+        )
+    )["exception_lines"][0]
+
+    assert quantity["quantity_ordered"] == "4"
+    assert quantity["quantity_invoiced"] == "5"
+    assert quantity["quantity_difference"] == "+1"
+    assert quantity["extended_variance"] == "+$18.00"
+    assert price["po_unit_price"] == "$24.00"
+    assert price["invoice_unit_price"] == "$24.50"
+    assert price["unit_price_difference"] == "+$0.50"
+    assert price["extended_variance"] == "+$3.00"
+    assert multiple["exception_label"] == "Quantity & price variance"
+    assert multiple["quantity_difference"] == "+1"
+    assert multiple["unit_price_difference"] == "+$2.00"
+    assert unit["po_unit"] == "bottle"
+    assert unit["invoice_unit"] == "case"
+    assert unit["extended_variance"] is None
+
+
+def test_reconciliation_cards_render_comparisons_without_internal_identifiers(
+    tmp_path: Path,
+) -> None:
+    response = _app(tmp_path).test_client().post("/demo", follow_redirects=True)
+    default_cards = response.data.split(b'id="all-reconciliation-lines"')[0]
+
+    assert b"Ordered quantity: 4 bag" in default_cards
+    assert b"Invoiced quantity: 5 bag" in default_cards
+    assert b"Difference: +1 bag" in default_cards
+    assert b"PO unit price: $24.00" in default_cards
+    assert b"Invoice unit price: $24.50" in default_cards
+    assert b"Difference: +$0.50 per unit" in default_cards
+    assert b"PO unit: bottle" in default_cards
+    assert b"Invoice unit: case" in default_cards
+    assert b"No financial comparison performed" in default_cards
+    assert b"reconciliation_id" not in response.data
+    assert b"record_id" not in response.data
+    assert b"ambiguity_candidate_po_record_ids" not in response.data
+
+
+def test_reconciliation_groups_only_exact_ambiguity_candidates(tmp_path: Path) -> None:
+    result = _reconcile_csvs(
+        tmp_path,
+        INVOICE_HEADER + "INV-1,PO-1,Vendor A,SKU-1,Item,1,10,10,each\n",
+        PO_HEADER
+        + "PO-1,Vendor A,SKU-1,Item,1,10,each\n"
+        + "PO-1,Vendor A,SKU-1,Item,1,10,each\n"
+        + "PO-1,Vendor B,SKU-1,Item,1,10,each\n",
+    )
+    view = _reconciliation_view(result)
+
+    assert view["actionable_exception_count"] == 2
+    assert [line["exception_label"] for line in view["exception_lines"]] == [
+        "Ambiguous match",
+        "Ordered but not invoiced",
+    ]
+    grouped = [line for line in view["audit_lines"] if line["ambiguity_grouped"]]
+    assert len(grouped) == 2
+    assert result.summary.missing_on_invoice_count == 3
 
 
 def test_multiple_upload_rejections_reset_and_session_isolation(tmp_path: Path) -> None:

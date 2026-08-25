@@ -157,11 +157,14 @@ class ReconciliationLine:
     item_name: str | None
     sku: str | None
     unit: str | None
+    invoice_unit: str | None
+    po_unit: str | None
     invoice_source_line_total: Decimal | None
     quantity_variance: QuantityVariance | None
     unit_price_variance: MoneyVariance | None
     invoice_line_total_variance: MoneyVariance | None
     extended_variance: MoneyVariance | None
+    ambiguity_candidate_po_record_ids: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)

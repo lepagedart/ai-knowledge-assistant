@@ -101,13 +101,12 @@ def test_monetary_tolerance_is_inclusive_at_one_cent_and_retains_exact_decimals(
 
 
 def test_ambiguous_and_unit_mismatch_are_never_guessed(tmp_path) -> None:
-    ambiguous = reconcile(
-        _records(
-            tmp_path,
-            HEADER_I + "INV-1,PO-1,V,,Item,1,10,10,each\n",
-            HEADER_P + "PO-1,V,A,Item,1,10,each\nPO-1,V,B,Item,1,10,each\n",
-        )
+    ambiguous_records = _records(
+        tmp_path,
+        HEADER_I + "INV-1,PO-1,V,,Item,1,10,10,each\n",
+        HEADER_P + "PO-1,V,A,Item,1,10,each\nPO-1,V,B,Item,1,10,each\n",
     )
+    ambiguous = reconcile(ambiguous_records)
     mismatch = reconcile(
         _records(
             tmp_path,
@@ -123,11 +122,40 @@ def test_ambiguous_and_unit_mismatch_are_never_guessed(tmp_path) -> None:
     )
     mismatch_line = next(line for line in mismatch.lines if line.invoice is not None)
     assert ReconciliationIssueCode.AMBIGUOUS_MATCH in ambiguous_line.issue_codes
+    assert ambiguous_line.ambiguity_candidate_po_record_ids == tuple(
+        record.record_id
+        for record in ambiguous_records
+        if record.record_type.value == "purchase_order"
+    )
     assert mismatch_line.status is ReconciliationStatus.UNMATCHED
     assert ReconciliationIssueCode.UNIT_MISMATCH in mismatch_line.issue_codes
     assert mismatch_line.quantity_variance is None
     assert mismatch_line.unit_price_variance is None
     assert mismatch_line.extended_variance is None
+
+
+def test_ambiguity_provenance_preserves_only_sku_and_vendor_filtered_candidates(
+    tmp_path,
+) -> None:
+    records = _records(
+        tmp_path,
+        HEADER_I + "INV-1,PO-1,Vendor A,SKU-1,Item,1,10,10,each\n",
+        HEADER_P
+        + "PO-1,Vendor A,SKU-1,Item,1,10,each\n"
+        + "PO-1,Vendor A,SKU-1,Item,1,10,each\n"
+        + "PO-1,Vendor B,SKU-1,Item,1,10,each\n",
+    )
+    result = reconcile(records)
+    ambiguous = next(line for line in result.lines if line.invoice is not None)
+    po_ids = [
+        record.record_id
+        for record in records
+        if record.record_type.value == "purchase_order"
+    ]
+
+    assert ambiguous.ambiguity_candidate_po_record_ids == tuple(po_ids[:2])
+    assert po_ids[2] not in ambiguous.ambiguity_candidate_po_record_ids
+    assert result.summary.missing_on_invoice_count == 3
 
 
 def test_missing_lines_malformed_values_and_evidence_are_safe(tmp_path) -> None:
