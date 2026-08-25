@@ -326,6 +326,8 @@ def _line(
         item,
         sku,
         _value(invoice, "unit") if invoice else _value(po, "unit") if po else None,
+        _value(invoice, "unit"),
+        _value(po, "unit"),
         _decimal_field(invoice, "line_total")[0] if invoice else None,
         qv,
         pv,

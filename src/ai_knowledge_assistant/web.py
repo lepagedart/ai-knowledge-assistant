@@ -13,7 +13,13 @@ from flask import Flask, flash, redirect, render_template, request, session, url
 from .answer_generation import generate_grounded_answer
 from .chunking import chunk_document
 from .extraction import extract_document, read_accepted_content
-from .models import AcceptedDocument, DocumentType, GroundedAnswer
+from .models import (
+    AcceptedDocument,
+    DocumentType,
+    GroundedAnswer,
+    ReconciliationIssueCode,
+    ReconciliationStatus,
+)
 from .openai_answers import OpenAIAnswerProvider
 from .openai_embeddings import OpenAIEmbeddingProvider
 from .reconciliation import reconcile, reconciliation_evidence
@@ -41,6 +47,12 @@ _DEMO_DISPLAY_TITLES = {
     "harbor_hearth_purchase_orders.xlsx": "Harbor & Hearth Purchase Orders (fictional)",
     "harbor_hearth_products.xlsx": "Harbor & Hearth Products (fictional)",
 }
+_DEMO_RECONCILIATION_SOURCE_NAMES = frozenset(
+    {
+        "harbor_hearth_invoices.csv",
+        "harbor_hearth_reconciliation_purchase_orders.csv",
+    }
+)
 
 
 @dataclass(slots=True)
@@ -85,8 +97,8 @@ def create_app(config: dict[str, Any] | None = None) -> Flask:
                 run.documents.append(
                     accept_upload(run.workspace, path.name, path.read_bytes())
                 )
-            _index_run(app, run)
             run.is_demo = True
+            _index_run(app, run)
             flash("Synthetic Harbor & Hearth demo is ready.", "success")
         except Exception:
             _discard_run(app, run)
@@ -224,7 +236,16 @@ def _index_run(app: Flask, run: KnowledgeRun) -> None:
         for sheet in document.sheets
         for record in sheet.records
     )
-    run.reconciliation = reconcile(records)
+    reconciliation_records = (
+        tuple(
+            record
+            for record in records
+            if record.document_name in _DEMO_RECONCILIATION_SOURCE_NAMES
+        )
+        if run.is_demo
+        else records
+    )
+    run.reconciliation = reconcile(reconciliation_records)
     if run.reconciliation.lines:
         extracted.append(reconciliation_evidence(run.reconciliation))
     chunks = tuple(
@@ -292,28 +313,168 @@ def _examples() -> tuple[str, ...]:
 def _reconciliation_view(result: Any) -> dict[str, Any]:
     """Safe display projection; never expose internal IDs or source paths."""
     summary = result.summary
+    engine_exception_lines = [
+        line
+        for line in result.lines
+        if line.status is not ReconciliationStatus.MATCHED or line.issue_codes
+    ]
+
+    # An ambiguous invoice line is one operator decision.  The engine also
+    # preserves its unconsumed PO candidates as MISSING_ON_INVOICE lines; keep
+    # those exact lines in the audit projection but do not promote each one to
+    # a separate default business problem.
+    ambiguity_groups: dict[tuple[str, str], int] = {}
+    for line in engine_exception_lines:
+        if ReconciliationIssueCode.AMBIGUOUS_MATCH in line.issue_codes:
+            key = _ambiguity_group_key(line)
+            if key is not None:
+                ambiguity_groups[key] = 0
+    grouped_candidate_ids = {
+        line.reconciliation_id
+        for line in engine_exception_lines
+        if line.status is ReconciliationStatus.MISSING_ON_INVOICE
+        and (key := _ambiguity_group_key(line)) in ambiguity_groups
+    }
+    for line in engine_exception_lines:
+        if line.reconciliation_id in grouped_candidate_ids:
+            key = _ambiguity_group_key(line)
+            if key is not None:
+                ambiguity_groups[key] += 1
+
+    default_exception_lines = [
+        line
+        for line in engine_exception_lines
+        if line.reconciliation_id not in grouped_candidate_ids
+    ]
+
+    def display_line(line: Any) -> dict[str, Any]:
+        quantity = line.quantity_variance
+        price = line.unit_price_variance
+        extended = line.extended_variance
+        group_key = _ambiguity_group_key(line)
+        return {
+            "status": line.status.value.replace("_", " ").title(),
+            "exception_label": _exception_label(line),
+            "invoice": line.invoice_number or "—",
+            "po": line.po_number or "—",
+            "item": line.item_name or "Unidentified line",
+            "issues": ", ".join(
+                code.value.replace("_", " ").title() for code in line.issue_codes
+            ),
+            "quantity_ordered": _decimal_text(quantity.po_quantity)
+            if quantity
+            else None,
+            "quantity_invoiced": _decimal_text(quantity.invoice_quantity)
+            if quantity
+            else None,
+            "quantity_difference": _signed_decimal_text(quantity.variance)
+            if quantity
+            else None,
+            "quantity_unit": line.po_unit or line.invoice_unit,
+            "po_unit_price": _money_text(price.po_amount) if price else None,
+            "invoice_unit_price": _money_text(price.invoice_amount) if price else None,
+            "unit_price_difference": _signed_money_text(price.variance)
+            if price
+            else None,
+            "extended_variance": _signed_money_text(extended.variance)
+            if extended
+            else None,
+            "invoice_unit": line.invoice_unit,
+            "po_unit": line.po_unit,
+            "ambiguity_candidate_count": ambiguity_groups.get(group_key)
+            if ReconciliationIssueCode.AMBIGUOUS_MATCH in line.issue_codes
+            else None,
+            "ambiguity_grouped": line.reconciliation_id in grouped_candidate_ids,
+        }
+
+    priority = {
+        ReconciliationStatus.VARIANCE: 0,
+        ReconciliationStatus.MISSING_ON_PO: 1,
+        ReconciliationStatus.UNMATCHED: 2,
+        ReconciliationStatus.MISSING_ON_INVOICE: 3,
+        ReconciliationStatus.MATCHED: 4,
+    }
+    ordered_exceptions = sorted(
+        default_exception_lines, key=lambda line: priority[line.status]
+    )
     return {
         "matched": summary.matched_line_count,
         "variances": summary.variance_line_count,
         "missing_on_po": summary.missing_on_po_count,
         "missing_on_invoice": summary.missing_on_invoice_count,
         "total_variance": f"${summary.total_monetary_variance:.2f}",
-        "lines": tuple(
-            {
-                "status": line.status.value.replace("_", " ").title(),
-                "invoice": line.invoice_number or "—",
-                "po": line.po_number or "—",
-                "item": line.item_name or "Unidentified line",
-                "issues": ", ".join(
-                    code.value.replace("_", " ").title() for code in line.issue_codes
-                ),
-                "variance": f"${line.extended_variance.variance:+.2f}"
-                if line.extended_variance
-                else "—",
-            }
-            for line in result.lines
-        ),
+        "exception_count": len(default_exception_lines),
+        "actionable_exception_count": len(default_exception_lines),
+        "total_line_count": len(result.lines),
+        "exception_lines": tuple(display_line(line) for line in ordered_exceptions),
+        "audit_lines": tuple(display_line(line) for line in result.lines),
     }
+
+
+def _ambiguity_group_key(line: Any) -> tuple[str, str] | None:
+    """Return a safe presentation-only key for an ambiguity and its PO rows."""
+    if not line.po_number or not line.item_name:
+        return None
+    return (
+        " ".join(line.po_number.casefold().split()),
+        " ".join(line.item_name.casefold().split()),
+    )
+
+
+def _decimal_text(value: Any) -> str:
+    rendered = format(value, "f").rstrip("0").rstrip(".")
+    return rendered or "0"
+
+
+def _signed_decimal_text(value: Any) -> str:
+    return ("+" if value >= 0 else "-") + _decimal_text(abs(value))
+
+
+def _money_text(value: Any) -> str:
+    return f"${value:.2f}"
+
+
+def _signed_money_text(value: Any) -> str:
+    return ("+$" if value >= 0 else "-$") + f"{abs(value):.2f}"
+
+
+def _exception_label(line: Any) -> str:
+    """Translate deterministic outcomes into concise client-facing language."""
+    issues = set(line.issue_codes)
+    labels = []
+    if line.status is ReconciliationStatus.VARIANCE:
+        has_price = bool(line.unit_price_variance and line.unit_price_variance.variance)
+        has_quantity = bool(line.quantity_variance and line.quantity_variance.variance)
+        if has_price and has_quantity:
+            labels.append("Quantity & price variance")
+        elif has_price:
+            labels.append("Price variance")
+        elif has_quantity:
+            labels.append("Quantity variance")
+        if not labels:
+            labels.append("Line total variance")
+    elif line.status is ReconciliationStatus.MISSING_ON_PO:
+        labels.append("Not found on purchase order")
+    elif line.status is ReconciliationStatus.MISSING_ON_INVOICE:
+        labels.append("Ordered but not invoiced")
+    if ReconciliationIssueCode.UNIT_MISMATCH in issues:
+        labels.append("Unit mismatch")
+    if ReconciliationIssueCode.AMBIGUOUS_MATCH in issues:
+        labels.append("Ambiguous match")
+    issue_labels = {
+        ReconciliationIssueCode.INVALID_QUANTITY: "Invalid quantity",
+        ReconciliationIssueCode.INVALID_UNIT_PRICE: "Invalid unit price",
+        ReconciliationIssueCode.INVALID_LINE_TOTAL: "Invalid line total",
+        ReconciliationIssueCode.MISSING_PO_NUMBER: "Missing purchase-order number",
+        ReconciliationIssueCode.PO_NOT_FOUND: "Purchase order not found",
+        ReconciliationIssueCode.ITEM_NOT_FOUND: "Item not found",
+        ReconciliationIssueCode.UNSUPPORTED_SCHEMA: "Unsupported record format",
+        ReconciliationIssueCode.WRONG_RECORD_TYPE: "Unsupported record type",
+    }
+    labels.extend(
+        issue_labels[issue] for issue in line.issue_codes if issue in issue_labels
+    )
+    return " · ".join(dict.fromkeys(labels)) or "Needs review"
 
 
 if __name__ == "__main__":  # pragma: no cover

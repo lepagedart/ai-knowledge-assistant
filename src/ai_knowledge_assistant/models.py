@@ -157,6 +157,8 @@ class ReconciliationLine:
     item_name: str | None
     sku: str | None
     unit: str | None
+    invoice_unit: str | None
+    po_unit: str | None
     invoice_source_line_total: Decimal | None
     quantity_variance: QuantityVariance | None
     unit_price_variance: MoneyVariance | None

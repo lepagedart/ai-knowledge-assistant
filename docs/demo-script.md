@@ -47,5 +47,8 @@ Load Harbor & Hearth and inspect the reconciliation panel. It includes a
 London Dry Gin price variance on INV-1048, exact tonic match, Espresso Beans
 quantity variance, an extra Club Soda invoice line, an Ice Cubes PO line not
 invoiced, ambiguous House Bitters, and a London Dry Gin Reserve unit mismatch.
+The panel is exception-first: clean matches are hidden by default and remain
+available through the matched-lines disclosure for auditability. The local
+deterministic engine evaluates every intended reconciliation line.
 Ask questions about INV-1048 or lines that differ; responses cite the locally
 generated reconciliation evidence.
