@@ -2,10 +2,15 @@
 
 from __future__ import annotations
 
+import importlib
+import re
+import sys
 from decimal import Decimal
 from io import BytesIO
 from pathlib import Path
 from typing import Sequence
+
+import pytest
 
 from ai_knowledge_assistant.models import (
     GroundedAnswer,
@@ -21,7 +26,9 @@ from ai_knowledge_assistant.structured_records import parse_structured_document
 from ai_knowledge_assistant.uploads import accept_upload
 from ai_knowledge_assistant.web import (
     _answer_view,
+    _prune_expired_runs,
     _reconciliation_view,
+    _reset_run,
     create_app,
     document_display_title,
 )
@@ -80,6 +87,313 @@ def _upload(
         content_type="multipart/form-data",
         follow_redirects=True,
     )
+
+
+def test_health_is_offline_and_does_not_construct_a_provider(tmp_path: Path) -> None:
+    app = create_app(
+        {"TESTING": True, "SECRET_KEY": "test-secret", "WORKSPACE_ROOT": tmp_path}
+    )
+
+    response = app.test_client().get("/health")
+
+    assert response.status_code == 200
+    assert response.json == {"status": "ok"}
+
+
+def test_wsgi_startup_is_offline_with_valid_production_configuration(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("AI_KNOWLEDGE_ASSISTANT_ENV", "production")
+    monkeypatch.setenv("FLASK_SECRET_KEY", "test-production-secret")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setenv("WORKSPACE_ROOT", str(tmp_path))
+    sys.modules.pop("ai_knowledge_assistant.wsgi", None)
+
+    wsgi = importlib.import_module("ai_knowledge_assistant.wsgi")
+
+    assert wsgi.app.config["DEBUG"] is False
+    assert wsgi.app.test_client().get("/health").json == {"status": "ok"}
+
+
+def test_wsgi_production_startup_requires_a_secret_key(monkeypatch) -> None:
+    monkeypatch.setenv("AI_KNOWLEDGE_ASSISTANT_ENV", "production")
+    monkeypatch.delenv("FLASK_SECRET_KEY", raising=False)
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    sys.modules.pop("ai_knowledge_assistant.wsgi", None)
+
+    with pytest.raises(
+        RuntimeError, match="Production requires FLASK_SECRET_KEY configuration"
+    ):
+        importlib.import_module("ai_knowledge_assistant.wsgi")
+
+
+def test_production_requires_secret_key_without_leaking_a_value(
+    tmp_path: Path, monkeypatch
+) -> None:
+    monkeypatch.delenv("FLASK_SECRET_KEY", raising=False)
+    try:
+        create_app(
+            {
+                "AI_KNOWLEDGE_ASSISTANT_ENV": "production",
+                "OPENAI_API_KEY": "not-a-real-key",
+                "WORKSPACE_ROOT": tmp_path,
+            }
+        )
+    except RuntimeError as error:
+        assert str(error) == "Production requires FLASK_SECRET_KEY configuration."
+        assert "not-a-real-key" not in str(error)
+    else:  # pragma: no cover
+        raise AssertionError("Production configuration unexpectedly started.")
+
+
+def test_malformed_environment_configuration_fails_without_secret_disclosure(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("FLASK_SECRET_KEY", "private-test-secret")
+    monkeypatch.setenv("ALLOW_CLIENT_UPLOADS", "perhaps")
+
+    with pytest.raises(RuntimeError, match="Invalid ALLOW_CLIENT_UPLOADS") as error:
+        create_app({"WORKSPACE_ROOT": tmp_path})
+
+    assert "private-test-secret" not in str(error.value)
+
+
+def test_non_positive_ttl_configuration_is_rejected(
+    monkeypatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv("KNOWLEDGE_RUN_TTL_SECONDS", "0")
+
+    with pytest.raises(
+        RuntimeError, match="Invalid KNOWLEDGE_RUN_TTL_SECONDS"
+    ):
+        create_app({"WORKSPACE_ROOT": tmp_path})
+
+
+def test_production_cookie_flags_and_development_http_behavior(tmp_path: Path) -> None:
+    production = create_app(
+        {
+            "AI_KNOWLEDGE_ASSISTANT_ENV": "production",
+            "SECRET_KEY": "test-secret",
+            "EMBEDDING_PROVIDER": FakeEmbeddingProvider(),
+            "ANSWER_PROVIDER": FakeAnswerProvider(),
+            "WORKSPACE_ROOT": tmp_path / "production",
+        }
+    )
+    development = _app(tmp_path / "development")
+
+    assert production.config["DEBUG"] is False
+    assert production.config["SESSION_COOKIE_SECURE"] is True
+    assert production.config["SESSION_COOKIE_HTTPONLY"] is True
+    assert production.config["SESSION_COOKIE_SAMESITE"] == "Lax"
+    assert development.config["SESSION_COOKIE_SECURE"] is False
+
+
+def test_expired_runs_are_removed_but_active_runs_are_preserved(tmp_path: Path) -> None:
+    clock = [100.0]
+    app = _app(tmp_path)
+    app.config.update(TIME_PROVIDER=lambda: clock[0], KNOWLEDGE_RUN_TTL_SECONDS=60)
+    with app.test_request_context("/"):
+        expired = _reset_run(app)
+    clock[0] = 150.0
+    with app.test_request_context("/"):
+        active = _reset_run(app)
+    clock[0] = 161.0
+    _prune_expired_runs(app)
+
+    runs = app.extensions["knowledge_runs"]
+    assert expired.workspace.run_id not in runs
+    assert not expired.workspace.root.exists()
+    assert active.workspace.run_id in runs
+    assert active.workspace.root.exists()
+
+
+def test_ttl_cleanup_honors_exact_and_adjacent_boundaries(tmp_path: Path) -> None:
+    clock = [100.0]
+    app = _app(tmp_path)
+    app.config.update(TIME_PROVIDER=lambda: clock[0], KNOWLEDGE_RUN_TTL_SECONDS=60)
+    with app.test_request_context("/"):
+        run = _reset_run(app)
+
+    clock[0] = 159.999
+    _prune_expired_runs(app)
+    assert run.workspace.run_id in app.extensions["knowledge_runs"]
+
+    clock[0] = 160.0
+    _prune_expired_runs(app)
+    assert run.workspace.run_id not in app.extensions["knowledge_runs"]
+    assert not run.workspace.root.exists()
+
+
+def test_health_does_not_prune_or_refresh_a_run(tmp_path: Path) -> None:
+    clock = [100.0]
+    app = _app(tmp_path)
+    app.config.update(TIME_PROVIDER=lambda: clock[0], KNOWLEDGE_RUN_TTL_SECONDS=60)
+    with app.test_request_context("/"):
+        run = _reset_run(app)
+    clock[0] = 200.0
+
+    response = app.test_client().get("/health")
+
+    assert response.json == {"status": "ok"}
+    assert app.extensions["knowledge_runs"][run.workspace.run_id] is run
+    assert run.last_accessed_at == 100.0
+
+
+def test_uploads_can_be_disabled_server_side_while_demo_still_works(
+    tmp_path: Path,
+) -> None:
+    app = _app(tmp_path)
+    app.config["ALLOW_CLIENT_UPLOADS"] = False
+    client = app.test_client()
+
+    blocked = _upload(client)
+    demo = client.post("/demo", follow_redirects=True)
+
+    assert b"Client uploads are disabled" in blocked.data
+    assert b"Synthetic Harbor &amp; Hearth demo" in demo.data
+    assert b"name=\"documents\"" not in demo.data
+
+
+def test_capacity_limits_reject_oversized_document_sets_and_questions(
+    tmp_path: Path,
+) -> None:
+    app = _app(tmp_path)
+    app.config.update(MAX_DOCUMENTS_PER_RUN=1, MAX_QUESTION_LENGTH=5)
+    client = app.test_client()
+
+    too_many = client.post(
+        "/upload",
+        data={
+            "documents": [
+                (BytesIO(b"# one"), "one.md"),
+                (BytesIO(b"# two"), "two.md"),
+            ]
+        },
+        content_type="multipart/form-data",
+        follow_redirects=True,
+    )
+    _upload(client)
+    question = client.post("/ask", data={"question": "too long"}, follow_redirects=True)
+
+    assert b"Too many documents" in too_many.data
+    assert b"Questions must be shorter" in question.data
+
+
+def test_total_upload_capacity_limit_rejects_request(tmp_path: Path) -> None:
+    app = _app(tmp_path)
+    app.config["MAX_TOTAL_UPLOAD_BYTES"] = 4
+
+    response = _upload(app.test_client(), content=b"too large")
+
+    assert b"total upload is too large" in response.data
+
+
+def test_oversized_request_has_a_sanitized_browser_response(tmp_path: Path) -> None:
+    app = _app(tmp_path)
+    app.config["MAX_CONTENT_LENGTH"] = 100
+
+    response = _upload(app.test_client(), content=b"x" * 1_000)
+
+    assert b"upload request is too large" in response.data
+    assert b"RequestEntityTooLarge" not in response.data
+
+
+def test_csrf_protects_public_post_routes_and_allows_valid_form(tmp_path: Path) -> None:
+    app = create_app(
+        {
+            "SECRET_KEY": "test-secret",
+            "WORKSPACE_ROOT": tmp_path,
+            "EMBEDDING_PROVIDER": FakeEmbeddingProvider(),
+            "ANSWER_PROVIDER": FakeAnswerProvider(),
+        }
+    )
+    client = app.test_client()
+
+    assert client.post("/demo").status_code == 400
+    landing = client.get("/")
+    token = re.search(rb'name="csrf_token" value="([^"]+)"', landing.data)
+    assert token is not None
+    response = client.post("/demo", data={"csrf_token": token.group(1).decode()})
+
+    assert response.status_code == 302
+    assert len(app.extensions["knowledge_runs"]) == 1
+
+
+def test_csrf_is_required_for_every_public_post_route(tmp_path: Path) -> None:
+    app = create_app({"SECRET_KEY": "test-secret", "WORKSPACE_ROOT": tmp_path})
+    client = app.test_client()
+
+    for path in ("/demo", "/upload", "/ask", "/reset"):
+        assert client.post(path).status_code == 400
+
+
+def test_csrf_token_from_another_browser_session_is_rejected(tmp_path: Path) -> None:
+    app = create_app(
+        {
+            "SECRET_KEY": "test-secret",
+            "WORKSPACE_ROOT": tmp_path,
+            "EMBEDDING_PROVIDER": FakeEmbeddingProvider(),
+            "ANSWER_PROVIDER": FakeAnswerProvider(),
+        }
+    )
+    first = app.test_client()
+    second = app.test_client()
+    token = re.search(rb'name="csrf_token" value="([^"]+)"', first.get("/").data)
+    assert token is not None
+
+    response = second.post("/demo", data={"csrf_token": token.group(1).decode()})
+
+    assert response.status_code == 400
+
+
+def test_active_run_limit_rejects_new_runs_without_deleting_existing_ones(
+    tmp_path: Path,
+) -> None:
+    app = _app(tmp_path)
+    app.config["MAX_ACTIVE_RUNS"] = 1
+    first = app.test_client()
+    second = app.test_client()
+
+    first_response = first.post("/demo", follow_redirects=True)
+    existing = next(iter(app.extensions["knowledge_runs"].values()))
+    second_response = second.post("/demo", follow_redirects=True)
+
+    assert b"Synthetic Harbor &amp; Hearth demo is ready" in first_response.data
+    assert b"Temporary workspace capacity reached" in second_response.data
+    assert tuple(app.extensions["knowledge_runs"].values()) == (existing,)
+    assert existing.workspace.root.exists()
+
+
+def test_browser_sessions_remain_isolated_when_one_resets(tmp_path: Path) -> None:
+    app = _app(tmp_path)
+    first = app.test_client()
+    second = app.test_client()
+
+    _upload(first, name="first.md", content=b"# First\nAlpha only")
+    _upload(second, name="second.md", content=b"# Second\nBeta only")
+    with first.session_transaction() as first_session:
+        first_run_id = first_session["run_id"]
+    with second.session_transaction() as second_session:
+        second_run_id = second_session["run_id"]
+    second_run = app.extensions["knowledge_runs"][second_run_id]
+
+    reset = first.post("/reset", follow_redirects=True)
+
+    assert first_run_id not in app.extensions["knowledge_runs"]
+    assert second_run_id in app.extensions["knowledge_runs"]
+    assert second_run.workspace.root.exists()
+    assert [document.original_display_name for document in second_run.documents] == [
+        "second.md"
+    ]
+    assert b"Workspace reset" in reset.data
+
+
+def test_deployment_documentation_sets_the_single_worker_policy() -> None:
+    deployment = Path("docs/portfolio-deployment.md").read_text()
+    render = Path("render.yaml").read_text()
+
+    assert "exactly one Gunicorn worker and one\nthread" in deployment
+    assert "--workers 1 --threads 1" in render
 
 
 INVOICE_HEADER = (

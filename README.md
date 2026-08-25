@@ -179,6 +179,12 @@ temporary, random run directory and should be explicitly cleaned up after use.
 
 See [scope documentation](docs/scope.md), [privacy and data handling](docs/privacy-and-data-handling.md), [architecture](docs/architecture.md), and the [demo script](docs/demo-script.md).
 
+## Portfolio deployment
+
+For the safe, single-worker Render/reference deployment path, configuration,
+public-demo upload posture, state lifecycle, OpenAI cost boundary, and exact
+build/start commands, see [portfolio deployment](docs/portfolio-deployment.md).
+
 ## Current status
 
 This foundation contains repository safety rules, deterministic document intake,
