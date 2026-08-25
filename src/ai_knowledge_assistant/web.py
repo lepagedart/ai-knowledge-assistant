@@ -323,35 +323,27 @@ def _reconciliation_view(result: Any) -> dict[str, Any]:
     # preserves its unconsumed PO candidates as MISSING_ON_INVOICE lines; keep
     # those exact lines in the audit projection but do not promote each one to
     # a separate default business problem.
-    ambiguity_groups: dict[tuple[str, str], int] = {}
-    for line in engine_exception_lines:
-        if ReconciliationIssueCode.AMBIGUOUS_MATCH in line.issue_codes:
-            key = _ambiguity_group_key(line)
-            if key is not None:
-                ambiguity_groups[key] = 0
     grouped_candidate_ids = {
-        line.reconciliation_id
+        candidate_id
         for line in engine_exception_lines
-        if line.status is ReconciliationStatus.MISSING_ON_INVOICE
-        and (key := _ambiguity_group_key(line)) in ambiguity_groups
+        if ReconciliationIssueCode.AMBIGUOUS_MATCH in line.issue_codes
+        for candidate_id in line.ambiguity_candidate_po_record_ids
     }
-    for line in engine_exception_lines:
-        if line.reconciliation_id in grouped_candidate_ids:
-            key = _ambiguity_group_key(line)
-            if key is not None:
-                ambiguity_groups[key] += 1
 
     default_exception_lines = [
         line
         for line in engine_exception_lines
-        if line.reconciliation_id not in grouped_candidate_ids
+        if not (
+            line.status is ReconciliationStatus.MISSING_ON_INVOICE
+            and line.purchase_order
+            and line.purchase_order.record_id in grouped_candidate_ids
+        )
     ]
 
     def display_line(line: Any) -> dict[str, Any]:
         quantity = line.quantity_variance
         price = line.unit_price_variance
         extended = line.extended_variance
-        group_key = _ambiguity_group_key(line)
         return {
             "status": line.status.value.replace("_", " ").title(),
             "exception_label": _exception_label(line),
@@ -381,10 +373,13 @@ def _reconciliation_view(result: Any) -> dict[str, Any]:
             else None,
             "invoice_unit": line.invoice_unit,
             "po_unit": line.po_unit,
-            "ambiguity_candidate_count": ambiguity_groups.get(group_key)
+            "ambiguity_candidate_count": len(line.ambiguity_candidate_po_record_ids)
             if ReconciliationIssueCode.AMBIGUOUS_MATCH in line.issue_codes
             else None,
-            "ambiguity_grouped": line.reconciliation_id in grouped_candidate_ids,
+            "ambiguity_grouped": bool(
+                line.purchase_order
+                and line.purchase_order.record_id in grouped_candidate_ids
+            ),
         }
 
     priority = {
@@ -411,16 +406,6 @@ def _reconciliation_view(result: Any) -> dict[str, Any]:
     }
 
 
-def _ambiguity_group_key(line: Any) -> tuple[str, str] | None:
-    """Return a safe presentation-only key for an ambiguity and its PO rows."""
-    if not line.po_number or not line.item_name:
-        return None
-    return (
-        " ".join(line.po_number.casefold().split()),
-        " ".join(line.item_name.casefold().split()),
-    )
-
-
 def _decimal_text(value: Any) -> str:
     rendered = format(value, "f").rstrip("0").rstrip(".")
     return rendered or "0"
@@ -442,7 +427,9 @@ def _exception_label(line: Any) -> str:
     """Translate deterministic outcomes into concise client-facing language."""
     issues = set(line.issue_codes)
     labels = []
-    if line.status is ReconciliationStatus.VARIANCE:
+    if line.status is ReconciliationStatus.MATCHED and not issues:
+        labels.append("Matched")
+    elif line.status is ReconciliationStatus.VARIANCE:
         has_price = bool(line.unit_price_variance and line.unit_price_variance.variance)
         has_quantity = bool(line.quantity_variance and line.quantity_variance.variance)
         if has_price and has_quantity:

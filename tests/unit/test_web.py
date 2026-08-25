@@ -256,6 +256,8 @@ def test_reconciliation_groups_ambiguity_candidates_and_keeps_full_audit_disclos
         b'reconciliation-grid matched-lines" hidden>'
     ) in response.data
     assert b"Tonic Water" in audit_cards
+    assert b"Matched</p><h4>Tonic Water</h4>" in audit_cards
+    assert b"Needs review</p><h4>Tonic Water</h4>" not in audit_cards
     assert audit_cards.count(b"House Bitters") == 3
     assert b"Ambiguity candidate \xe2\x80\x94 ordered but not invoiced" in audit_cards
 
@@ -416,6 +418,28 @@ def test_reconciliation_cards_render_comparisons_without_internal_identifiers(
     assert b"No financial comparison performed" in default_cards
     assert b"reconciliation_id" not in response.data
     assert b"record_id" not in response.data
+    assert b"ambiguity_candidate_po_record_ids" not in response.data
+
+
+def test_reconciliation_groups_only_exact_ambiguity_candidates(tmp_path: Path) -> None:
+    result = _reconcile_csvs(
+        tmp_path,
+        INVOICE_HEADER + "INV-1,PO-1,Vendor A,SKU-1,Item,1,10,10,each\n",
+        PO_HEADER
+        + "PO-1,Vendor A,SKU-1,Item,1,10,each\n"
+        + "PO-1,Vendor A,SKU-1,Item,1,10,each\n"
+        + "PO-1,Vendor B,SKU-1,Item,1,10,each\n",
+    )
+    view = _reconciliation_view(result)
+
+    assert view["actionable_exception_count"] == 2
+    assert [line["exception_label"] for line in view["exception_lines"]] == [
+        "Ambiguous match",
+        "Ordered but not invoiced",
+    ]
+    grouped = [line for line in view["audit_lines"] if line["ambiguity_grouped"]]
+    assert len(grouped) == 2
+    assert result.summary.missing_on_invoice_count == 3
 
 
 def test_multiple_upload_rejections_reset_and_session_isolation(tmp_path: Path) -> None:

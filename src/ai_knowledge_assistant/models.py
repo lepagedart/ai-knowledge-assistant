@@ -164,6 +164,7 @@ class ReconciliationLine:
     unit_price_variance: MoneyVariance | None
     invoice_line_total_variance: MoneyVariance | None
     extended_variance: MoneyVariance | None
+    ambiguity_candidate_po_record_ids: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)

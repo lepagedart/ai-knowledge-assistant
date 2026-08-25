@@ -94,7 +94,19 @@ def reconcile(
                 if code is ReconciliationIssueCode.ITEM_NOT_FOUND
                 else ReconciliationStatus.UNMATCHED
             )
-            lines.append(_line(invoice, None, status, (code,)))
+            lines.append(
+                _line(
+                    invoice,
+                    None,
+                    status,
+                    (code,),
+                    ambiguity_candidate_po_record_ids=tuple(
+                        candidate.record_id for candidate in matches
+                    )
+                    if code is ReconciliationIssueCode.AMBIGUOUS_MATCH
+                    else (),
+                )
+            )
             continue
         po = matches[0]
         consumed.add(po.record_id)
@@ -288,7 +300,15 @@ def _compare(
 
 
 def _line(
-    invoice, po, status, issues, qv=None, pv=None, invoice_total=None, extended=None
+    invoice,
+    po,
+    status,
+    issues,
+    qv=None,
+    pv=None,
+    invoice_total=None,
+    extended=None,
+    ambiguity_candidate_po_record_ids: tuple[str, ...] = (),
 ):
     invoice_number = _value(invoice, "invoice_number") if invoice else None
     po_number = (
@@ -333,6 +353,7 @@ def _line(
         pv,
         invoice_total,
         extended,
+        ambiguity_candidate_po_record_ids,
     )
 
 
