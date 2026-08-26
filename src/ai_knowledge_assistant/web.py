@@ -43,8 +43,10 @@ from .structured_records import parse_structured_document, structured_evidence
 from .uploads import UploadValidationError, accept_upload
 from .workspace import UploadWorkspace
 
+# Runtime demo content is deliberately shipped with the installed package, rather
+# than being resolved from the checkout that happened to build the application.
 DEMO_DIRECTORY = (
-    Path(__file__).resolve().parents[2] / "demo_documents" / "harbor_and_hearth"
+    Path(__file__).resolve().parent / "demo_documents" / "harbor_and_hearth"
 )
 DEFAULT_MAX_FILE_BYTES = 10 * 1024 * 1024
 DEFAULT_MAX_DOCUMENTS_PER_RUN = 12

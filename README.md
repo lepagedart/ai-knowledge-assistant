@@ -137,10 +137,12 @@ Codespaces preview, use
 `AI_KNOWLEDGE_ASSISTANT_HOST=0.0.0.0 .venv/bin/python -m ai_knowledge_assistant.web`;
 do not expose it publicly without production security work.
 
-Choose **Use Harbor & Hearth Demo** to process the six committed synthetic
+Choose **Use Harbor & Hearth Demo** to process the eleven committed synthetic
 documents through the same secure upload, extraction, chunking, and indexing
-pipeline used for client uploads. Client uploads accept PDF, DOCX, TXT, and
-Markdown files up to 10 MiB each. The browser cookie stores only an opaque run
+pipeline used for client uploads. The public demo ships as narrowly packaged
+synthetic runtime data, so an installed deployment is self-contained. Client
+uploads accept PDF, DOCX, TXT, and Markdown files up to 10 MiB each. The
+browser cookie stores only an opaque run
 identifier; documents, process-local indexes, and question/answer presentation
 state remain in a temporary server-side workspace and **Reset workspace**
 removes that run. When OpenAI providers are configured, document chunks and questions cross the existing OpenAI processing boundary;

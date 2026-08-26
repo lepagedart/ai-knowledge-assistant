@@ -17,10 +17,9 @@ from ai_knowledge_assistant.models import (
 )
 from ai_knowledge_assistant.retrieval import LocalVectorIndex, build_index, retrieve
 from ai_knowledge_assistant.uploads import accept_upload
+from ai_knowledge_assistant.web import DEMO_DIRECTORY
 from ai_knowledge_assistant.workspace import UploadWorkspace
 
-ROOT = Path(__file__).resolve().parents[2]
-DEMO_DIRECTORY = ROOT / "demo_documents" / "harbor_and_hearth"
 _WORD = re.compile(r"[a-z]+")
 
 

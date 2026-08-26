@@ -2,10 +2,8 @@ from pathlib import Path
 
 from ai_knowledge_assistant.extraction import extract_document
 from ai_knowledge_assistant.uploads import accept_upload
+from ai_knowledge_assistant.web import DEMO_DIRECTORY
 from ai_knowledge_assistant.workspace import UploadWorkspace
-
-ROOT = Path(__file__).resolve().parents[2]
-DEMO_DIRECTORY = ROOT / "demo_documents" / "harbor_and_hearth"
 
 
 def test_harbor_and_hearth_markdown_documents_extract_with_source_headings(

@@ -16,5 +16,8 @@ def test_flask_runtime_assets_are_narrowly_declared_as_package_data() -> None:
             "templates/*.html",
             "static/*.css",
             "static/*.js",
+            "demo_documents/harbor_and_hearth/*.md",
+            "demo_documents/harbor_and_hearth/*.csv",
+            "demo_documents/harbor_and_hearth/*.xlsx",
         ]
     }

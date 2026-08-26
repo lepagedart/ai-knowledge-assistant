@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from ai_knowledge_assistant.uploads import accept_upload
+from ai_knowledge_assistant.web import DEMO_DIRECTORY
 from ai_knowledge_assistant.workspace import UploadWorkspace
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -14,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[2]
 def test_upload_does_not_modify_repository_or_demo_documents(tmp_path: Path) -> None:
     tracked_files = [
         ROOT / "README.md",
-        ROOT / "demo_documents" / "harbor_and_hearth" / "employee_handbook.md",
+        DEMO_DIRECTORY / "employee_handbook.md",
     ]
     before = {path: path.read_bytes() for path in tracked_files}
     workspace = UploadWorkspace.create(tmp_path)

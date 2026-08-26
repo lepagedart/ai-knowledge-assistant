@@ -1,6 +1,7 @@
 # Harbor & Hearth Café Demo Script
 
-The fictional documents in `demo_documents/harbor_and_hearth/` demonstrate the
+The fictional documents shipped at
+`src/ai_knowledge_assistant/demo_documents/harbor_and_hearth/` demonstrate the
 grounded-answer behavior. The expected results below describe evidence and
 citations, not exact model wording.
 

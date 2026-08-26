@@ -25,6 +25,7 @@ from ai_knowledge_assistant.reconciliation import reconcile
 from ai_knowledge_assistant.structured_records import parse_structured_document
 from ai_knowledge_assistant.uploads import accept_upload
 from ai_knowledge_assistant.web import (
+    DEMO_DIRECTORY,
     _answer_view,
     _prune_expired_runs,
     _reconciliation_view,
@@ -43,6 +44,21 @@ class FakeEmbeddingProvider:
         if "CEO" in text:
             return (-1.0, 0.0)
         return (1.0, 1.0)
+
+
+DEMO_FILENAMES = {
+    "callout_attendance_policy.md",
+    "employee_handbook.md",
+    "harbor_hearth_invoices.csv",
+    "harbor_hearth_products.xlsx",
+    "harbor_hearth_purchase_orders.xlsx",
+    "harbor_hearth_reconciliation_purchase_orders.csv",
+    "harbor_hearth_vendors.csv",
+    "menu_product_reference.md",
+    "new_team_member_training_guide.md",
+    "opening_closing_sop.md",
+    "refund_service_recovery_policy.md",
+}
 
 
 class FakeAnswerProvider:
@@ -98,6 +114,18 @@ def test_health_is_offline_and_does_not_construct_a_provider(tmp_path: Path) -> 
 
     assert response.status_code == 200
     assert response.json == {"status": "ok"}
+
+
+def test_demo_assets_are_package_relative_and_complete() -> None:
+    assert DEMO_DIRECTORY.is_dir()
+    assert DEMO_DIRECTORY == (
+        Path(sys.modules["ai_knowledge_assistant.web"].__file__).resolve().parent
+        / "demo_documents"
+        / "harbor_and_hearth"
+    )
+    assert {
+        path.name for path in DEMO_DIRECTORY.iterdir() if path.is_file()
+    } == DEMO_FILENAMES
 
 
 def test_wsgi_startup_is_offline_with_valid_production_configuration(

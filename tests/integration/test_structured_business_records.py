@@ -23,11 +23,9 @@ from ai_knowledge_assistant.structured_records import (
     structured_evidence,
 )
 from ai_knowledge_assistant.uploads import accept_upload
-from ai_knowledge_assistant.web import _locator_text
+from ai_knowledge_assistant.web import DEMO_DIRECTORY, _locator_text
 from ai_knowledge_assistant.workspace import UploadWorkspace
 
-ROOT = Path(__file__).resolve().parents[2]
-DEMO_DIRECTORY = ROOT / "demo_documents" / "harbor_and_hearth"
 WORD = re.compile(r"[a-z0-9]+")
 VOCABULARY = (
     "inv",
