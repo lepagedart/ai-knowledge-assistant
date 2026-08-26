@@ -3,9 +3,10 @@
 from pathlib import Path
 
 import ai_knowledge_assistant
+from ai_knowledge_assistant.web import DEMO_DIRECTORY
 
 ROOT = Path(__file__).resolve().parents[2]
-DEMO_DOCUMENTS = ROOT / "demo_documents" / "harbor_and_hearth"
+DEMO_DOCUMENTS = DEMO_DIRECTORY
 REQUIRED_DOCUMENTS = {
     "employee_handbook.md",
     "opening_closing_sop.md",

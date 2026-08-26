@@ -36,6 +36,9 @@ ai_knowledge_assistant = [
     "templates/*.html",
     "static/*.css",
     "static/*.js",
+    "demo_documents/harbor_and_hearth/*.md",
+    "demo_documents/harbor_and_hearth/*.csv",
+    "demo_documents/harbor_and_hearth/*.xlsx",
 ]
 
 [tool.pytest.ini_options]
